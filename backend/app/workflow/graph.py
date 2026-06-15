@@ -12,6 +12,12 @@ from app.workflow.nodes import generate_storyboard, generate_voice, generate_ava
 
 logger = structlog.get_logger("workflow.graph")
 
+def _route_start(state: PipelineGraphState) -> str:
+    """Route from START to the requested node."""
+    node = state.get("current_node")
+    if node in ["generate_storyboard", "generate_voice", "generate_avatar_video"]:
+        return node
+    return "generate_storyboard"
 
 def _route_after_storyboard(state: PipelineGraphState) -> Literal["generate_voice", "wait_for_user"]:
     """Routing logic after storyboard generation."""
@@ -40,8 +46,8 @@ workflow.add_node("generate_voice", generate_voice)
 workflow.add_node("generate_avatar_video", generate_avatar_video)
 workflow.add_node("wait_for_user", wait_for_user)
 
-# Add Edges
-workflow.add_edge(START, "generate_storyboard")
+# Conditional Routing from START
+workflow.add_conditional_edges(START, _route_start)
 
 # Conditional Routing
 workflow.add_conditional_edges("generate_storyboard", _route_after_storyboard)

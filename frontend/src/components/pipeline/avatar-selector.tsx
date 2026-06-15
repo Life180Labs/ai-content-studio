@@ -14,12 +14,12 @@ interface AvatarSelectorProps {
 
 // Mocked avatar list from HeyGen for UI purposes
 const AVATARS = [
-  { id: "Anna_public_3_20240108", name: "Anna", style: "Professional", tag: "News" },
-  { id: "Tyler-public", name: "Tyler", style: "Casual", tag: "Vlog" },
-  { id: "Silvia_public", name: "Silvia", style: "Business", tag: "Presentation" },
-  { id: "Wayne_20240711", name: "Wayne", style: "Casual", tag: "Education" },
-  { id: "Leah_public", name: "Leah", style: "Formal", tag: "News" },
-  { id: "Matt_public", name: "Matt", style: "Business", tag: "Sales" },
+  { id: "Anna_public_3_20240108", name: "Anna", style: "Professional", tag: "News", imageUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&q=80" },
+  { id: "Tyler-public", name: "Tyler", style: "Casual", tag: "Vlog", imageUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&q=80" },
+  { id: "Silvia_public", name: "Silvia", style: "Business", tag: "Presentation", imageUrl: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&q=80" },
+  { id: "Wayne_20240711", name: "Wayne", style: "Casual", tag: "Education", imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80" },
+  { id: "Leah_public", name: "Leah", style: "Formal", tag: "News", imageUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80" },
+  { id: "Matt_public", name: "Matt", style: "Business", tag: "Sales", imageUrl: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&q=80" },
 ];
 
 import { Switch } from "@/components/ui/switch";
@@ -53,7 +53,8 @@ export function AvatarSelector({ onProceed, isGeneratingVideo }: AvatarSelectorP
             )}
           >
             <div className="aspect-video bg-muted relative flex items-center justify-center border-b border-border/50">
-              <UserSquare className="h-12 w-12 text-muted-foreground/30" />
+              <img src={avatar.imageUrl} alt={avatar.name} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
               {selectedAvatar === avatar.id && (
                 <div className="absolute top-3 right-3 h-6 w-6 rounded-full bg-primary flex items-center justify-center shadow-md">
                   <Check className="h-4 w-4 text-primary-foreground" />

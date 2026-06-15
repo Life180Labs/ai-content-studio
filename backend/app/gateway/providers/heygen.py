@@ -8,6 +8,7 @@ For Phase 2, this is a placeholder that registers the provider for key storage.
 
 from __future__ import annotations
 
+import time
 import structlog
 
 from app.gateway.base import AIProvider, AIProviderError, AIResponse

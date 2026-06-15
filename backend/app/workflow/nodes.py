@@ -42,14 +42,14 @@ async def generate_storyboard(state: PipelineGraphState) -> dict:
         return {"error_message": "No script provided to storyboard node."}
 
     system_prompt = """You are an expert video director. Convert the following video script into a structured storyboard.
-CRITICAL: No single scene should cross the 8-second time limit. Therefore, the "voice_text" for EACH scene MUST NOT exceed 20 words. Break the script down into smaller, faster-paced scenes if necessary.
+CRITICAL: No single scene should cross the 8-second time limit. Therefore, the "voice_text" for EACH scene MUST NOT exceed 50 words. Break the script down into smaller, faster-paced scenes if necessary.
 
 Return ONLY valid JSON with this structure:
 {
   "scenes": [
     {
       "scene_index": 1,
-      "voice_text": "The exact spoken text for this scene (max 20 words).",
+      "voice_text": "The exact spoken text for this scene (max 50 words).",
       "visual_prompt": "A highly detailed image generation prompt describing the scene.",
       "avatar_action": "Describe what the AI avatar is doing (e.g., pointing, smiling).",
       "camera_direction": "e.g., Close-up, Zoom in, Pan right"
@@ -81,7 +81,19 @@ Return ONLY valid JSON with this structure:
             if start != -1 and end != -1:
                 text = text[start:end+1]
 
-        data = json.loads(text)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Try to auto-fix missing commas between array objects
+            fixed_text = re.sub(r'\}\s*\{', '}, {', text)
+            try:
+                data = json.loads(fixed_text)
+            except json.JSONDecodeError as e:
+                logger.error("json_decode_error", raw_text=text, error=str(e))
+                err_idx = getattr(e, 'pos', 0)
+                snippet = text[max(0, err_idx - 100):min(len(text), err_idx + 100)]
+                return {"error_message": f"Failed to parse JSON: {str(e)}. Snippet near error: ...{snippet}...", "current_node": "generate_storyboard"}
+
         scenes = data.get("scenes", [])
         
         return {
@@ -93,9 +105,6 @@ Return ONLY valid JSON with this structure:
     except AIProviderError as e:
         logger.error("storyboard_generation_error", error=str(e))
         return {"error_message": str(e), "current_node": "generate_storyboard"}
-    except json.JSONDecodeError as e:
-        logger.error("json_decode_error", raw_text=text, error=str(e))
-        return {"error_message": f"Failed to parse JSON from AI response. Raw text snippet: {text[:200]}...", "current_node": "generate_storyboard"}
 
 
 async def generate_voice(state: PipelineGraphState) -> dict:
@@ -159,8 +168,8 @@ async def generate_avatar_video(state: PipelineGraphState) -> dict:
         
     provider = HeyGenProvider(api_key=hg_key)
     scenes = state.get("storyboard_scenes", [])
-    avatar_id = state.get("selected_avatar_id", "Anna_public_3_20240108")
-    voice_id = state.get("selected_voice_id", "1bd001e7e50f421d891986aad5158bc8") # HeyGen voice map
+    avatar_id = state.get("selected_avatar_id") or "Anna_public_3_20240108"
+    voice_id = state.get("selected_voice_id") or "1bd001e7e50f421d891986aad5158bc8" # HeyGen default voice
     use_custom_voice = state.get("use_custom_voice", True)
     voice_audio_paths = state.get("voice_audio_paths", {})
     

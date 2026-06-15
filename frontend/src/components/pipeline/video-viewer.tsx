@@ -11,9 +11,10 @@ interface VideoViewerProps {
   workspaceId: string | null;
   projectId: string;
   scenes: StoryboardScene[];
+  runError?: string;
 }
 
-export function VideoViewer({ workspaceId, projectId, scenes }: VideoViewerProps) {
+export function VideoViewer({ workspaceId, projectId, scenes, runError }: VideoViewerProps) {
   // Always poll if on this tab
   const { data: videoStatus, isPending } = usePollVideoStatus(workspaceId, projectId, true);
 
@@ -51,6 +52,13 @@ export function VideoViewer({ workspaceId, projectId, scenes }: VideoViewerProps
           </p>
         </div>
         
+        {runError && (
+          <div className="bg-destructive/10 text-destructive text-sm px-4 py-2 rounded-md flex items-center gap-2 max-w-md">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span className="line-clamp-2">{runError}</span>
+          </div>
+        )}
+
         {allCompleted && (
           <Button size="lg" className="gap-2">
             <Download className="h-4 w-4" />

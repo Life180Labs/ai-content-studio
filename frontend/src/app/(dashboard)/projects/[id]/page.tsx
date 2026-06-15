@@ -329,6 +329,7 @@ export default function ProjectDetailPage({
             workspaceId={workspaceId}
             projectId={projectId}
             scenes={status?.storyboard_result?.scenes || []}
+            runError={status?.runs?.find(r => r.stage === "video" && r.status === "error")?.error_message}
           />
         )}
       </div>

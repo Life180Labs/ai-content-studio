@@ -304,6 +304,8 @@ export default function ProjectDetailPage({
 
         {effectiveTab === "voice" && (
           <VoiceSelector
+            workspaceId={workspaceId}
+            projectId={projectId}
             onProceed={handleGenerateVoice}
             isGeneratingAvatar={generateAvatar.isPending}
           />

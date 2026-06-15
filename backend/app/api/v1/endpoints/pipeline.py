@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_id
@@ -270,3 +270,43 @@ async def check_video_status(
     if not result:
         raise HTTPException(status_code=404, detail="No video generation found for this project.")
     return result
+
+@router.get("/voices")
+async def get_voices(
+    workspace_id: str,
+    project_id: str,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Get list of available voices from ElevenLabs."""
+    try:
+        service = PipelineService(session)
+        return await service.get_voices(user_id=user_id)
+    except AIProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@router.post("/voices/clone")
+async def clone_voice(
+    workspace_id: str,
+    project_id: str,
+    name: str = Form(...),
+    description: str = Form(""),
+    file: UploadFile = File(...),
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Clone a voice using an uploaded audio sample."""
+    try:
+        file_bytes = await file.read()
+        service = PipelineService(session)
+        return await service.clone_voice(
+            user_id=user_id,
+            name=name,
+            description=description,
+            file_bytes=file_bytes,
+            filename=file.filename or "sample.mp3"
+        )
+    except AIProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clone voice: {str(e)}")

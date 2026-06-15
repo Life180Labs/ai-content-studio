@@ -5,26 +5,69 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Play, Check, Volume2, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Plus, Mic } from "lucide-react";
+import { useGetVoices, useCloneVoice } from "@/hooks/use-pipeline";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 interface VoiceSelectorProps {
+  workspaceId: string | null;
+  projectId: string;
   onProceed: (voiceId: string) => void;
   isGeneratingAvatar: boolean;
 }
 
-// Mocked voice list from ElevenLabs for UI purposes
-const VOICES = [
-  { id: "Rachel", name: "Rachel", gender: "Female", useCase: "Narration", tags: ["Calm", "Professional"] },
-  { id: "Drew", name: "Drew", gender: "Male", useCase: "News", tags: ["Authoritative", "Deep"] },
-  { id: "Clyde", name: "Clyde", gender: "Male", useCase: "Conversational", tags: ["Friendly", "Upbeat"] },
-  { id: "Mimi", name: "Mimi", gender: "Female", useCase: "Animation", tags: ["Childish", "Energetic"] },
-  { id: "Fin", name: "Fin", gender: "Male", useCase: "Gaming", tags: ["Intense", "Raspy"] },
-  { id: "Bella", name: "Bella", gender: "Female", useCase: "Narration", tags: ["Soft", "Soothing"] },
-];
-
-export function VoiceSelector({ onProceed, isGeneratingAvatar }: VoiceSelectorProps) {
-  const [selectedVoice, setSelectedVoice] = useState<string>("Rachel");
+export function VoiceSelector({ workspaceId, projectId, onProceed, isGeneratingAvatar }: VoiceSelectorProps) {
+  const [selectedVoice, setSelectedVoice] = useState<string>("");
   const [playingId, setPlayingId] = useState<string | null>(null);
+  
+  const [isCloneOpen, setIsCloneOpen] = useState(false);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneDesc, setCloneDesc] = useState("");
+  const [cloneFile, setCloneFile] = useState<File | null>(null);
+
+  const { data: voices, isLoading } = useGetVoices(workspaceId, projectId);
+  const cloneVoice = useCloneVoice(workspaceId, projectId);
+
+  // Set initial voice if none selected
+  if (voices && voices.length > 0 && !selectedVoice) {
+    setSelectedVoice(voices[0].id);
+  }
+
+  const handleCloneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cloneName || !cloneFile) {
+      toast.error("Please provide a name and an audio file.");
+      return;
+    }
+    
+    const formData = new FormData();
+    formData.append("name", cloneName);
+    formData.append("description", cloneDesc);
+    formData.append("file", cloneFile);
+    
+    try {
+      const result = await cloneVoice.mutateAsync(formData);
+      toast.success("Voice cloned successfully!");
+      setIsCloneOpen(false);
+      setSelectedVoice(result.id);
+      setCloneName("");
+      setCloneDesc("");
+      setCloneFile(null);
+    } catch (err: any) {
+      toast.error(err?.detail || "Failed to clone voice.");
+    }
+  };
 
   const handlePlay = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -32,32 +75,20 @@ export function VoiceSelector({ onProceed, isGeneratingAvatar }: VoiceSelectorPr
     // Stop any existing speech
     window.speechSynthesis.cancel();
     
-    const voiceDef = VOICES.find(v => v.id === id);
+    if (voiceDef?.preview_url) {
+      const audio = new Audio(voiceDef.preview_url);
+      audio.onplay = () => setPlayingId(id);
+      audio.onended = () => setPlayingId(null);
+      audio.onerror = () => setPlayingId(null);
+      audio.play();
+      return;
+    }
+
     const text = `Hi, I'm ${voiceDef?.name}. This is a preview of my voice.`;
-    
     const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Basic mapping to make voices sound slightly different based on mock properties
-    if (voiceDef?.gender === "Female") {
-      utterance.pitch = 1.3;
-      utterance.rate = 1.05;
-    } else {
-      utterance.pitch = 0.8;
-      utterance.rate = 0.95;
-    }
-    
-    if (id === "Mimi") {
-      utterance.pitch = 1.6;
-      utterance.rate = 1.1;
-    }
-    if (id === "Drew") {
-      utterance.pitch = 0.5;
-    }
-    
     utterance.onstart = () => setPlayingId(id);
     utterance.onend = () => setPlayingId(null);
     utterance.onerror = () => setPlayingId(null);
-    
     window.speechSynthesis.speak(utterance);
   };
 
@@ -70,10 +101,74 @@ export function VoiceSelector({ onProceed, isGeneratingAvatar }: VoiceSelectorPr
             Choose the narrator for your video from ElevenLabs
           </p>
         </div>
+        
+        <Dialog open={isCloneOpen} onOpenChange={setIsCloneOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              <Mic className="h-4 w-4" />
+              Clone New Voice
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Clone Your Voice</DialogTitle>
+              <DialogDescription>
+                Upload a clean audio sample to create an instant voice clone using ElevenLabs.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleCloneSubmit} className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="voice-name">Voice Name</Label>
+                <Input 
+                  id="voice-name" 
+                  value={cloneName} 
+                  onChange={e => setCloneName(e.target.value)} 
+                  placeholder="e.g. My Voice Clone" 
+                  required 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="voice-desc">Description (Optional)</Label>
+                <Textarea 
+                  id="voice-desc" 
+                  value={cloneDesc} 
+                  onChange={e => setCloneDesc(e.target.value)} 
+                  placeholder="e.g. Energetic podcast host" 
+                  className="resize-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="voice-file">Audio Sample</Label>
+                <Input 
+                  id="voice-file" 
+                  type="file" 
+                  accept="audio/*" 
+                  onChange={e => setCloneFile(e.target.files?.[0] || null)} 
+                  required 
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Provide at least 1 minute of clean audio with no background noise. Max 10MB.
+                </p>
+              </div>
+              <div className="pt-4 flex justify-end">
+                <Button type="submit" disabled={cloneVoice.isPending}>
+                  {cloneVoice.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Clone Voice
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center border rounded-lg border-dashed">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+          <p className="text-muted-foreground">Fetching voices from ElevenLabs...</p>
+        </div>
+      ) : (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {VOICES.map((voice) => (
+        {voices?.map((voice) => (
           <Card
             key={voice.id}
             onClick={() => setSelectedVoice(voice.id)}
@@ -92,7 +187,7 @@ export function VoiceSelector({ onProceed, isGeneratingAvatar }: VoiceSelectorPr
                   </div>
                   <div>
                     <h3 className="font-semibold">{voice.name}</h3>
-                    <p className="text-xs text-muted-foreground">{voice.gender} • {voice.useCase}</p>
+                    <p className="text-xs text-muted-foreground">{voice.category}</p>
                   </div>
                 </div>
                 {selectedVoice === voice.id && (
@@ -104,9 +199,9 @@ export function VoiceSelector({ onProceed, isGeneratingAvatar }: VoiceSelectorPr
               
               <div className="flex items-center justify-between mt-4">
                 <div className="flex flex-wrap gap-1.5">
-                  {voice.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="text-[10px] px-1.5">
-                      {tag}
+                  {Object.entries(voice.labels || {}).slice(0, 3).map(([k, v]) => (
+                    <Badge key={k} variant="secondary" className="text-[10px] px-1.5">
+                      {v as string}
                     </Badge>
                   ))}
                 </div>
@@ -124,6 +219,7 @@ export function VoiceSelector({ onProceed, isGeneratingAvatar }: VoiceSelectorPr
           </Card>
         ))}
       </div>
+      )}
 
       <div className="flex justify-end pt-4">
         <Button

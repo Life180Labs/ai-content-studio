@@ -96,6 +96,14 @@ export type AvatarGeneratePayload = {
   use_custom_voice: boolean;
 };
 
+export type Voice = {
+  id: string;
+  name: string;
+  category: string;
+  labels: Record<string, string>;
+  preview_url: string | null;
+};
+
 // ── Hooks ──────────────────────────────────────────────────
 
 function pipelineUrl(workspaceId: string | null, projectId: string) {
@@ -240,5 +248,33 @@ export function usePollVideoStatus(workspaceId: string | null, projectId: string
     enabled: !!workspaceId && !!projectId && enabled,
     refetchInterval: 5000, // Poll every 5 seconds
     retry: false,
+  });
+}
+
+export function useGetVoices(workspaceId: string | null, projectId: string) {
+  return useQuery<Voice[]>({
+    queryKey: ["voices", projectId],
+    queryFn: async () => {
+      const res = await api.get(`${pipelineUrl(workspaceId, projectId)}/voices`);
+      return res.data;
+    },
+    enabled: !!workspaceId && !!projectId,
+  });
+}
+
+export function useCloneVoice(workspaceId: string | null, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<{ id: string; name: string }, unknown, FormData>({
+    mutationFn: async (formData) => {
+      const res = await api.post(`${pipelineUrl(workspaceId, projectId)}/voices/clone`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["voices", projectId] });
+    },
   });
 }

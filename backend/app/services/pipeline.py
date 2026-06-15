@@ -804,3 +804,27 @@ Keep the visual prompt descriptive and cinematic."""
 
         videos = {k: VideoStatus(**v) for k, v in new_videos_dict.items()}
         return VideoResult(videos=videos, project_id=str(project_id))
+
+    async def get_voices(self, user_id: uuid.UUID) -> list[dict]:
+        """Get list of available voices from ElevenLabs."""
+        gateway = await self._get_gateway(user_id)
+        el_key = gateway.provider_keys.get("elevenlabs")
+        if not el_key:
+            raise AIProviderError("ElevenLabs API key not configured.", provider="elevenlabs", model="")
+        
+        from app.gateway.providers.elevenlabs import ElevenLabsProvider
+        provider = ElevenLabsProvider(api_key=el_key)
+        return await provider.get_voices()
+
+    async def clone_voice(
+        self, user_id: uuid.UUID, name: str, description: str, file_bytes: bytes, filename: str
+    ) -> dict:
+        """Clone a voice using ElevenLabs."""
+        gateway = await self._get_gateway(user_id)
+        el_key = gateway.provider_keys.get("elevenlabs")
+        if not el_key:
+            raise AIProviderError("ElevenLabs API key not configured.", provider="elevenlabs", model="")
+        
+        from app.gateway.providers.elevenlabs import ElevenLabsProvider
+        provider = ElevenLabsProvider(api_key=el_key)
+        return await provider.clone_voice(name, description, file_bytes, filename)

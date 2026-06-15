@@ -108,3 +108,40 @@ class ElevenLabsProvider(AIProvider):
                 provider=self.provider_name,
                 model=model,
             ) from e
+
+    async def get_voices(self) -> list[dict[str, Any]]:
+        """Fetch all available voices."""
+        try:
+            voices = await self.client.voices.get_all()
+            result = []
+            for voice in voices.voices:
+                result.append({
+                    "id": voice.voice_id,
+                    "name": voice.name,
+                    "category": voice.category,
+                    "labels": voice.labels or {},
+                    "preview_url": voice.preview_url,
+                })
+            return result
+        except ApiError as e:
+            logger.error("elevenlabs_get_voices_error", error=str(e))
+            raise AIProviderError(f"ElevenLabs API Error: {str(e)}", provider=self.provider_name, model="") from e
+
+    async def clone_voice(self, name: str, description: str, file_bytes: bytes, filename: str) -> dict[str, Any]:
+        """Clone a voice by uploading an audio sample."""
+        try:
+            file_obj = io.BytesIO(file_bytes)
+            file_obj.name = filename 
+            
+            voice = await self.client.voices.add(
+                name=name,
+                description=description,
+                files=[file_obj]
+            )
+            return {
+                "id": voice.voice_id,
+                "name": voice.name,
+            }
+        except ApiError as e:
+            logger.error("elevenlabs_clone_voice_error", error=str(e))
+            raise AIProviderError(f"ElevenLabs API Error: {str(e)}", provider=self.provider_name, model="") from e

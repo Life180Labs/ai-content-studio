@@ -88,10 +88,12 @@ class PipelineService:
             custom_models=pref.custom_models or {},
         )
 
-    async def _get_project(self, project_id: uuid.UUID) -> Project:
-        """Fetch a project by ID."""
+    async def _get_project(self, project_id: uuid.UUID, workspace_id: uuid.UUID) -> Project:
+        """Fetch a project by ID and Workspace ID to ensure isolation."""
         stmt = select(Project).where(
-            Project.id == project_id, Project.deleted_at.is_(None)
+            Project.id == project_id, 
+            Project.workspace_id == workspace_id,
+            Project.deleted_at.is_(None)
         )
         result = await self.session.execute(stmt)
         project = result.scalar_one_or_none()
@@ -181,11 +183,12 @@ Return ONLY a JSON array of strings, no other text. Example:
     async def generate_content(
         self,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         project_id: uuid.UUID,
         canvas: CanvasInput,
     ) -> ContentResult:
         """Generate 2 content variations from canvas data."""
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
         gateway = await self._get_gateway(user_id)
 
         # Save canvas data to project
@@ -329,11 +332,12 @@ Return ONLY a number between 0 and 100, nothing else."""
     async def generate_script(
         self,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         project_id: uuid.UUID,
         additional_context: str = "",
     ) -> ScriptResult:
         """Generate a video script from the approved content."""
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
         gateway = await self._get_gateway(user_id)
 
         # Get the latest approved content
@@ -472,10 +476,10 @@ Return ONLY valid JSON."""
     # ── Pipeline Status ─────────────────────────────────────
 
     async def get_status(
-        self, project_id: uuid.UUID
+        self, project_id: uuid.UUID, workspace_id: uuid.UUID
     ) -> PipelineStatusResponse:
         """Get the current pipeline state for a project."""
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
 
         stage_names = {v: k for k, v in STAGE_MAP.items()}
         stage_name = stage_names.get(project.current_stage, "canvas")
@@ -601,10 +605,10 @@ Return ONLY valid JSON."""
 
     # ── Phase 3: LangGraph Background Tasks ─────────────────
 
-    async def start_storyboard(self, user_id: uuid.UUID, project_id: uuid.UUID, script: str) -> dict:
+    async def start_storyboard(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, script: str) -> dict:
         """Trigger Celery task to run LangGraph for storyboard generation."""
         from app.workflow.tasks import start_storyboard_generation
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
         project.current_stage = STAGE_MAP["storyboard"]
         await self.session.flush()
         
@@ -613,11 +617,11 @@ Return ONLY valid JSON."""
         return {"task_id": task.id, "status": "processing"}
 
     async def save_storyboard(
-        self, user_id: uuid.UUID, project_id: uuid.UUID, scenes: list[StoryboardScene], video_frame_size: str, video_quality: str
+        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, scenes: list[StoryboardScene], video_frame_size: str, video_quality: str
     ) -> StoryboardResult:
         """Manually save storyboard edits as a successful run without invoking AI."""
         # Ensure project exists
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
         project.current_stage = STAGE_MAP["storyboard"]
         await self.session.flush()
 
@@ -641,10 +645,10 @@ Return ONLY valid JSON."""
         )
 
     async def regenerate_scene(
-        self, user_id: uuid.UUID, project_id: uuid.UUID, scene_index: int, current_scene: StoryboardScene, additional_context: str
+        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, scene_index: int, current_scene: StoryboardScene, additional_context: str
     ) -> StoryboardScene:
         """Regenerate a single storyboard scene."""
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
         gateway = await self._get_gateway(user_id)
 
         system_prompt = """You are an expert video director. You are rewriting a SINGLE scene of a storyboard.
@@ -697,14 +701,14 @@ Keep the visual prompt descriptive and cinematic."""
             raise AIProviderError("Failed to parse regenerated scene. Please try again.")
 
     async def start_voice(
-        self, user_id: uuid.UUID, project_id: uuid.UUID, voice_id: str, 
+        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, voice_id: str, 
         storyboard_scenes: list[StoryboardScene] | None = None,
         video_frame_size: str = "16:9",
         video_quality: str = "1080p"
     ) -> dict:
         """Trigger Celery task to run LangGraph for voice generation."""
         from app.workflow.tasks import start_voice_generation
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
         project.current_stage = STAGE_MAP["voice"]
         
         # Save the confirmed storyboard edits to the run history
@@ -731,19 +735,21 @@ Keep the visual prompt descriptive and cinematic."""
         return {"task_id": task.id, "status": "processing"}
 
     async def start_avatar(
-        self, user_id: uuid.UUID, project_id: uuid.UUID, avatar_id: str, use_custom_voice: bool = True
+        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, avatar_id: str, use_custom_voice: bool = True
     ) -> dict:
         """Trigger Celery task to run LangGraph for avatar generation."""
         from app.workflow.tasks import start_avatar_generation
-        project = await self._get_project(project_id)
+        project = await self._get_project(project_id, workspace_id)
         project.current_stage = STAGE_MAP["video"]
         await self.session.commit()
         
         task = start_avatar_generation.delay(str(project_id), str(user_id), avatar_id, use_custom_voice)
         return {"task_id": task.id, "status": "processing"}
 
-    async def check_video_status(self, user_id: uuid.UUID, project_id: uuid.UUID) -> VideoResult | None:
+    async def check_video_status(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID) -> VideoResult | None:
         """Poll HeyGen API for the latest video statuses and update DB."""
+        # Ensure project isolation
+        await self._get_project(project_id, workspace_id)
         # 1. Fetch latest Video PipelineRun
         stmt = (
             select(PipelineRun)

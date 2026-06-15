@@ -72,10 +72,12 @@ async def generate_content(
 ):
     """Generate 2 content variations from canvas data (Step 2)."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     try:
         service = PipelineService(session)
         return await service.generate_content(
             user_id=user_id,
+            workspace_id=wid,
             project_id=pid,
             canvas=data,
         )
@@ -93,10 +95,12 @@ async def generate_script(
 ):
     """Generate a video script from approved content (Step 3)."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     try:
         service = PipelineService(session)
         return await service.generate_script(
             user_id=user_id,
+            workspace_id=wid,
             project_id=pid,
             additional_context=data.additional_context,
         )
@@ -114,12 +118,13 @@ async def regenerate_stage(
 ):
     """Regenerate a specific pipeline stage."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     service = PipelineService(session)
 
     try:
         if data.stage == "content":
             # Get canvas data from project
-            project = await service._get_project(pid)
+            project = await service._get_project(pid, wid)
             if not project.canvas_data:
                 raise HTTPException(
                     status_code=400, detail="Canvas data missing. Fill out the Canvas first."
@@ -127,11 +132,11 @@ async def regenerate_stage(
             canvas = CanvasInput(**project.canvas_data)
             if data.additional_context:
                 canvas.additional_context = data.additional_context
-            return await service.generate_content(user_id, pid, canvas)
+            return await service.generate_content(user_id, wid, pid, canvas)
 
         elif data.stage == "script":
             return await service.generate_script(
-                user_id, pid, data.additional_context
+                user_id, wid, pid, data.additional_context
             )
 
         raise HTTPException(status_code=400, detail=f"Unknown stage: {data.stage}")
@@ -150,10 +155,12 @@ async def generate_storyboard(
 ):
     """Start storyboard generation background task (Step 4)."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     try:
         service = PipelineService(session)
         return await service.start_storyboard(
             user_id=user_id,
+            workspace_id=wid,
             project_id=pid,
             script=data.script,
         )
@@ -170,9 +177,11 @@ async def save_storyboard(
 ):
     """Manually save storyboard edits as a draft."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     service = PipelineService(session)
     return await service.save_storyboard(
         user_id=user_id,
+        workspace_id=wid,
         project_id=pid,
         scenes=data.scenes,
         video_frame_size=data.video_frame_size,
@@ -189,10 +198,12 @@ async def regenerate_storyboard_scene(
 ):
     """Regenerate a single storyboard scene."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     try:
         service = PipelineService(session)
         return await service.regenerate_scene(
             user_id=user_id,
+            workspace_id=wid,
             project_id=pid,
             scene_index=data.scene_index,
             current_scene=data.current_scene,
@@ -211,10 +222,12 @@ async def generate_voice(
 ):
     """Start voice generation background task (Step 5)."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     try:
         service = PipelineService(session)
         return await service.start_voice(
             user_id=user_id,
+            workspace_id=wid,
             project_id=pid,
             voice_id=data.selected_voice_id,
             storyboard_scenes=data.storyboard_scenes,
@@ -234,10 +247,12 @@ async def generate_avatar(
 ):
     """Start avatar generation background task (Step 6)."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     try:
         service = PipelineService(session)
         return await service.start_avatar(
             user_id=user_id,
+            workspace_id=wid,
             project_id=pid,
             avatar_id=data.selected_avatar_id,
             use_custom_voice=data.use_custom_voice,
@@ -254,8 +269,9 @@ async def get_pipeline_status(
 ):
     """Get the current pipeline state for a project."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     service = PipelineService(session)
-    return await service.get_status(pid)
+    return await service.get_status(pid, wid)
 
 @router.get("/videos/status", response_model=VideoResult)
 async def check_video_status(
@@ -266,8 +282,9 @@ async def check_video_status(
 ):
     """Poll HeyGen API for video progress."""
     pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
     service = PipelineService(session)
-    result = await service.check_video_status(user_id=user_id, project_id=pid)
+    result = await service.check_video_status(user_id=user_id, workspace_id=wid, project_id=pid)
     if not result:
         raise HTTPException(status_code=404, detail="No video generation found for this project.")
     return result

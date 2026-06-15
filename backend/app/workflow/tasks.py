@@ -104,14 +104,39 @@ async def _run_graph_async(
         # Update the state to start from a specific node if needed, 
         # but invoke will just run from where it paused or START.
         # Actually, if we pass initial_state, it updates the state.
-        result = await graph.ainvoke(initial_state, config)
+        try:
+            result = await graph.ainvoke(initial_state, config)
+        except Exception as e:
+            logger.error("graph_execution_failed", error=str(e), exc_info=True)
+            result = {
+                "error_message": f"Pipeline crashed unexpectedly: {str(e)}",
+                "current_node": node,
+            }
         
         # Save output to PipelineRun so the frontend polling endpoint sees it
         async with async_session_factory() as run_session:
             from app.models.pipeline_run import PipelineRun
             import uuid
             
-            if node == "generate_storyboard" and not result.get("error_message"):
+            if result.get("error_message"):
+                stage_map = {
+                    "generate_storyboard": "storyboard",
+                    "generate_voice": "voice",
+                    "generate_avatar_video": "video"
+                }
+                run = PipelineRun(
+                    project_id=uuid.UUID(project_id),
+                    stage=stage_map.get(node, "unknown"),
+                    input_data={"node": node},
+                    output_data={},
+                    provider="langgraph",
+                    model="pipeline",
+                    status="error",
+                    error_message=result.get("error_message")
+                )
+                run_session.add(run)
+                await run_session.commit()
+            elif node == "generate_storyboard" and not result.get("error_message"):
                 run = PipelineRun(
                     project_id=uuid.UUID(project_id),
                     stage="storyboard",

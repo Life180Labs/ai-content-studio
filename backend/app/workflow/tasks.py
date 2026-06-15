@@ -13,7 +13,7 @@ from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.db.session import async_session_maker
+from app.db.session import async_session_factory
 from app.repositories.ai_preference import AIPreferenceRepository
 from app.services.ai_preference import AIPreferenceService
 from app.workflow.graph import workflow
@@ -36,7 +36,7 @@ async def _run_graph_async(
     # For now we use the main database URL
     db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgres://")
     
-    async with async_session_maker() as session:
+    async with async_session_factory() as session:
         pref_repo = AIPreferenceRepository(session)
         pref_service = AIPreferenceService(session)
         pref = await pref_repo.get_by_user_id(user_id)

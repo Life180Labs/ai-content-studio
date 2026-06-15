@@ -91,11 +91,11 @@ export interface PipelineStatus {
 
 // ── Hooks ──────────────────────────────────────────────────
 
-function pipelineUrl(workspaceId: string, projectId: string) {
+function pipelineUrl(workspaceId: string | null, projectId: string) {
   return `/api/v1/workspaces/${workspaceId}/projects/${projectId}/pipeline`;
 }
 
-export function usePipelineStatus(workspaceId: string, projectId: string) {
+export function usePipelineStatus(workspaceId: string | null, projectId: string) {
   return useQuery<PipelineStatus>({
     queryKey: ["pipeline", projectId],
     queryFn: () =>
@@ -115,7 +115,7 @@ export function usePipelineStatus(workspaceId: string, projectId: string) {
   });
 }
 
-export function useGenerateContent(workspaceId: string, projectId: string) {
+export function useGenerateContent(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation<ContentResult, unknown, CanvasInput>({
     mutationFn: (canvas) =>
@@ -126,7 +126,7 @@ export function useGenerateContent(workspaceId: string, projectId: string) {
   });
 }
 
-export function useGenerateScript(workspaceId: string, projectId: string) {
+export function useGenerateScript(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation<ScriptResult, unknown, { additional_context?: string }>({
     mutationFn: (data) =>
@@ -137,7 +137,7 @@ export function useGenerateScript(workspaceId: string, projectId: string) {
   });
 }
 
-export function useRegenerate(workspaceId: string, projectId: string) {
+export function useRegenerate(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation<
     ContentResult | ScriptResult,
@@ -153,7 +153,7 @@ export function useRegenerate(workspaceId: string, projectId: string) {
 }
 
 export function useSuggestKeyPoints(
-  workspaceId: string,
+  workspaceId: string | null,
   projectId: string
 ) {
   return useMutation<
@@ -169,7 +169,7 @@ export function useSuggestKeyPoints(
   });
 }
 
-export function useGenerateStoryboard(workspaceId: string, projectId: string) {
+export function useGenerateStoryboard(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation<{ task_id: string }, unknown, { script: string }>({
     mutationFn: (data) =>
@@ -180,7 +180,7 @@ export function useGenerateStoryboard(workspaceId: string, projectId: string) {
   });
 }
 
-export function useGenerateVoice(workspaceId: string, projectId: string) {
+export function useGenerateVoice(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation<{ task_id: string }, unknown, { selected_voice_id: string }>({
     mutationFn: (data) =>
@@ -191,7 +191,7 @@ export function useGenerateVoice(workspaceId: string, projectId: string) {
   });
 }
 
-export function useGenerateAvatar(workspaceId: string, projectId: string) {
+export function useGenerateAvatar(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation<{ task_id: string }, unknown, { selected_avatar_id: string }>({
     mutationFn: (data) =>

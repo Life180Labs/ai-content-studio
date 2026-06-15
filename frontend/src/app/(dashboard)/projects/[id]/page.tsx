@@ -34,7 +34,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-const TEMP_WORKSPACE_ID = "00000000-0000-0000-0000-000000000000";
+import { api } from "@/lib/api";
 
 const STAGE_NAMES = ["canvas", "content", "script", "storyboard", "voice", "avatar", "video"];
 
@@ -46,15 +46,26 @@ export default function ProjectDetailPage({
   const { id: projectId } = use(params);
   const router = useRouter();
 
-  const { data: status, isLoading } = usePipelineStatus(TEMP_WORKSPACE_ID, projectId);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch user's workspaces
+    api.get<Array<{id: string}>>("/api/v1/workspaces").then((workspaces) => {
+      if (workspaces && workspaces.length > 0) {
+        setWorkspaceId(workspaces[0].id);
+      }
+    }).catch(console.error);
+  }, []);
+
+  const { data: status, isLoading } = usePipelineStatus(workspaceId, projectId);
   
-  const generateContent = useGenerateContent(TEMP_WORKSPACE_ID, projectId);
-  const generateScript = useGenerateScript(TEMP_WORKSPACE_ID, projectId);
-  const generateStoryboard = useGenerateStoryboard(TEMP_WORKSPACE_ID, projectId);
-  const generateVoice = useGenerateVoice(TEMP_WORKSPACE_ID, projectId);
-  const generateAvatar = useGenerateAvatar(TEMP_WORKSPACE_ID, projectId);
-  const regenerate = useRegenerate(TEMP_WORKSPACE_ID, projectId);
-  const suggestKeyPoints = useSuggestKeyPoints(TEMP_WORKSPACE_ID, projectId);
+  const generateContent = useGenerateContent(workspaceId, projectId);
+  const generateScript = useGenerateScript(workspaceId, projectId);
+  const generateStoryboard = useGenerateStoryboard(workspaceId, projectId);
+  const generateVoice = useGenerateVoice(workspaceId, projectId);
+  const generateAvatar = useGenerateAvatar(workspaceId, projectId);
+  const regenerate = useRegenerate(workspaceId, projectId);
+  const suggestKeyPoints = useSuggestKeyPoints(workspaceId, projectId);
 
   const currentStage = status?.current_stage ?? 0;
   const [activeTab, setActiveTab] = useState(STAGE_NAMES[currentStage] || "canvas");

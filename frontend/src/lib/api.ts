@@ -61,6 +61,9 @@ class ApiClient {
 
       if (!res.ok) {
         this.clearTokens();
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
         return false;
       }
 
@@ -69,6 +72,9 @@ class ApiClient {
       return true;
     } catch {
       this.clearTokens();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
       return false;
     }
   }

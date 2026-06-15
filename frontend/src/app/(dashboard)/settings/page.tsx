@@ -28,6 +28,8 @@ import {
   User,
   Palette,
   ChevronDown,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 const PROVIDERS = [
@@ -63,6 +65,7 @@ export default function SettingsPage() {
   const [customModels, setCustomModels] = useState<Record<string, string[]>>({});
   const [newModelInputs, setNewModelInputs] = useState<Record<string, string>>({});
   const [taskOverrides, setTaskOverrides] = useState<Record<string, { provider: string; model: string }>>({});
+  const [showKey, setShowKey] = useState<Record<string, boolean>>({});
 
   // Sync form with loaded prefs
   useEffect(() => {
@@ -109,7 +112,17 @@ export default function SettingsPage() {
       toast.success("AI settings saved!");
       setKeys({});
     } catch (err: any) {
-      toast.error(err?.error?.message || "Failed to save settings");
+      let errorMessage = "Failed to save settings";
+      if (typeof err?.detail === "string") {
+        errorMessage = err.detail;
+      } else if (Array.isArray(err?.detail) && err.detail.length > 0 && err.detail[0].msg) {
+        errorMessage = err.detail[0].msg;
+      } else if (err?.error?.message) {
+        errorMessage = err.error.message;
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      toast.error(errorMessage);
     }
   };
 
@@ -191,17 +204,30 @@ export default function SettingsPage() {
                   </Badge>
                 )}
               </div>
-              <Input
-                type="password"
-                placeholder={
-                  prefs?.provider_keys_status?.[key as keyof typeof prefs.provider_keys_status]
-                    ? "••••••••••••••••  (key saved — enter new to replace)"
-                    : `Enter your ${label} API key`
-                }
-                value={(keys as Record<string, string | undefined>)[key] || ""}
-                onChange={(e) => setKeys((prev) => ({ ...prev, [key]: e.target.value }))}
-                className="font-mono text-sm"
-              />
+              <div className="relative">
+                <Input
+                  type={showKey[key] ? "text" : "password"}
+                  placeholder={
+                    prefs?.provider_keys_status?.[key as keyof typeof prefs.provider_keys_status]
+                      ? "••••••••••••••••  (key saved — enter new to replace)"
+                      : `Enter your ${label} API key`
+                  }
+                  value={(keys as Record<string, string | undefined>)[key] || ""}
+                  onChange={(e) => setKeys((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="font-mono text-sm pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((prev) => ({ ...prev, [key]: !prev[key] }))}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showKey[key] ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
           ))}
         </CardContent>

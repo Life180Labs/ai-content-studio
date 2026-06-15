@@ -28,7 +28,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           {children}
           <Toaster richColors position="bottom-right" />
         </TooltipProvider>

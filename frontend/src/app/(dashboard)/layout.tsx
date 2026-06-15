@@ -26,6 +26,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CommandPalette } from "@/components/shared/command-palette";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -189,6 +190,9 @@ export default function DashboardLayout({
       <main className="flex-1 overflow-auto">
         {children}
       </main>
+
+      {/* Command Palette (Cmd+K) */}
+      <CommandPalette />
     </div>
   );
 }

@@ -49,11 +49,9 @@ export default function ProjectsPage() {
           </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              New Project
-            </Button>
+          <DialogTrigger render={<Button className="gap-2" />}>
+            <Plus className="h-4 w-4" />
+            New Project
           </DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>

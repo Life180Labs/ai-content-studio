@@ -135,6 +135,18 @@ ai-content-studio/
 | `POST` | `.../pipeline/avatar` | Generate video via HeyGen (Celery task) |
 | `GET` | `.../pipeline/videos/status` | Poll HeyGen API for rendering status and retrieve final MP4 URL |
 
+### Global Assets
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/workspaces/{workspace_id}/assets/voices` | List ElevenLabs voices (including custom clones) |
+| `POST` | `/api/v1/workspaces/{workspace_id}/assets/voices/clone` | Upload audio to ElevenLabs to clone a voice |
+| `GET` | `/api/v1/workspaces/{workspace_id}/assets/avatars` | List HeyGen avatars (public and custom) |
+| `GET` | `/api/v1/workspaces/{workspace_id}/assets/brand-kits` | List Brand Kits |
+| `POST` | `/api/v1/workspaces/{workspace_id}/assets/brand-kits` | Create Brand Kit |
+| `PUT` | `/api/v1/workspaces/{workspace_id}/assets/brand-kits/{kit_id}` | Update Brand Kit |
+| `DELETE` | `/api/v1/workspaces/{workspace_id}/assets/brand-kits/{kit_id}` | Delete Brand Kit |
+
 ## Environment Variables
 
 See [`.env.example`](.env.example) for all required configuration.

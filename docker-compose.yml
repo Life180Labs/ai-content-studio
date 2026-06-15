@@ -32,6 +32,22 @@ services:
       timeout: 5s
       retries: 5
 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: acs-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ai_content_studio
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redisdata:

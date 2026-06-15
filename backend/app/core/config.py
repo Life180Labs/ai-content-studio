@@ -89,6 +89,14 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT == "production"
 
     @property
+    def CELERY_BROKER_URL(self) -> str:
+        return self.REDIS_URL
+
+    @property
+    def CELERY_RESULT_BACKEND(self) -> str:
+        return self.REDIS_URL
+
+    @property
     def is_development(self) -> bool:
         return self.ENVIRONMENT == "development"
 

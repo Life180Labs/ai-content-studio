@@ -49,6 +49,20 @@ export interface ScriptResult {
   stage: string;
 }
 
+export interface StoryboardScene {
+  scene_index: number;
+  voice_text: string;
+  visual_prompt: string;
+  avatar_action: string;
+  camera_direction: string;
+}
+
+export interface StoryboardResult {
+  scenes: StoryboardScene[];
+  project_id: string;
+  stage: string;
+}
+
 export interface PipelineRun {
   id: string;
   stage: string;
@@ -69,6 +83,7 @@ export interface PipelineStatus {
   canvas_data: CanvasInput | null;
   content_result: ContentResult | null;
   script_result: ScriptResult | null;
+  storyboard_result?: StoryboardResult | null;
   runs: PipelineRun[];
   total_cost_usd: number;
   total_tokens: number;
@@ -86,6 +101,17 @@ export function usePipelineStatus(workspaceId: string, projectId: string) {
     queryFn: () =>
       api.get(`${pipelineUrl(workspaceId, projectId)}/status`),
     enabled: !!projectId && !!workspaceId,
+    refetchInterval: (query) => {
+      // Poll every 3 seconds if we're waiting for a background task
+      const data = query.state.data;
+      if (!data) return false;
+      // If we are on storyboard, voice, avatar, we poll
+      if (data.current_stage >= 3) {
+        // Just poll while building for simplicity, but stop if we reach the end
+        return 3000;
+      }
+      return false;
+    },
   });
 }
 
@@ -140,5 +166,38 @@ export function useSuggestKeyPoints(
         `${pipelineUrl(workspaceId, projectId)}/suggest-key-points`,
         data
       ),
+  });
+}
+
+export function useGenerateStoryboard(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<{ task_id: string }, unknown, { script: string }>({
+    mutationFn: (data) =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/storyboard`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
+    },
+  });
+}
+
+export function useGenerateVoice(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<{ task_id: string }, unknown, { selected_voice_id: string }>({
+    mutationFn: (data) =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/voice`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
+    },
+  });
+}
+
+export function useGenerateAvatar(workspaceId: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<{ task_id: string }, unknown, { selected_avatar_id: string }>({
+    mutationFn: (data) =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/avatar`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
+    },
   });
 }

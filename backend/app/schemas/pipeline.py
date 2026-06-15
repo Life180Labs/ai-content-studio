@@ -136,3 +136,31 @@ class PipelineStatusResponse(BaseModel):
     runs: list[PipelineRunResponse] = []
     total_cost_usd: float = 0.0
     total_tokens: int = 0
+
+# ── Storyboard (Step 4) ─────────────────────────────────────
+
+class StoryboardScene(BaseModel):
+    scene_index: int
+    voice_text: str
+    visual_prompt: str
+    avatar_action: str
+    camera_direction: str
+
+class StoryboardResult(BaseModel):
+    scenes: list[StoryboardScene]
+    project_id: str
+    stage: str = "storyboard"
+
+class StoryboardGenerateRequest(BaseModel):
+    script: str
+
+# ── Voice (Step 5) ──────────────────────────────────────────
+
+class VoiceGenerateRequest(BaseModel):
+    selected_voice_id: str
+
+# ── Avatar (Step 6) ─────────────────────────────────────────
+
+class AvatarGenerateRequest(BaseModel):
+    selected_avatar_id: str
+

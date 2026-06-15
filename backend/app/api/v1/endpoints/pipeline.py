@@ -19,6 +19,9 @@ from app.schemas.pipeline import (
     RegenerateRequest,
     ScriptGenerateRequest,
     ScriptResult,
+    StoryboardGenerateRequest,
+    VoiceGenerateRequest,
+    AvatarGenerateRequest,
 )
 from app.services.pipeline import PipelineService
 
@@ -131,6 +134,66 @@ async def regenerate_stage(
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+
+@router.post("/storyboard")
+async def generate_storyboard(
+    workspace_id: str,
+    project_id: str,
+    data: StoryboardGenerateRequest,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Start storyboard generation background task (Step 4)."""
+    pid = _parse_uuid(project_id, "project_id")
+    try:
+        service = PipelineService(session)
+        return await service.start_storyboard(
+            user_id=user_id,
+            project_id=pid,
+            script=data.script,
+        )
+    except AIProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@router.post("/voice")
+async def generate_voice(
+    workspace_id: str,
+    project_id: str,
+    data: VoiceGenerateRequest,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Start voice generation background task (Step 5)."""
+    pid = _parse_uuid(project_id, "project_id")
+    try:
+        service = PipelineService(session)
+        return await service.start_voice(
+            user_id=user_id,
+            project_id=pid,
+            voice_id=data.selected_voice_id,
+        )
+    except AIProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@router.post("/avatar")
+async def generate_avatar(
+    workspace_id: str,
+    project_id: str,
+    data: AvatarGenerateRequest,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Start avatar generation background task (Step 6)."""
+    pid = _parse_uuid(project_id, "project_id")
+    try:
+        service = PipelineService(session)
+        return await service.start_avatar(
+            user_id=user_id,
+            project_id=pid,
+            avatar_id=data.selected_avatar_id,
+        )
+    except AIProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 @router.get("/status", response_model=PipelineStatusResponse)
 async def get_pipeline_status(

@@ -554,3 +554,37 @@ Return ONLY valid JSON."""
             total_cost_usd=total_cost,
             total_tokens=total_tokens,
         )
+
+    # ── Phase 3: LangGraph Background Tasks ─────────────────
+
+    async def start_storyboard(self, user_id: uuid.UUID, project_id: uuid.UUID, script: str) -> dict:
+        """Trigger Celery task to run LangGraph for storyboard generation."""
+        from app.workflow.tasks import start_storyboard_generation
+        project = await self._get_project(project_id)
+        project.current_stage = STAGE_MAP["storyboard"]
+        await self.session.flush()
+        
+        # Celery .delay() to enqueue the task
+        task = start_storyboard_generation.delay(str(project_id), str(user_id), script)
+        return {"task_id": task.id, "status": "processing"}
+
+    async def start_voice(self, user_id: uuid.UUID, project_id: uuid.UUID, voice_id: str) -> dict:
+        """Trigger Celery task to run LangGraph for voice generation."""
+        from app.workflow.tasks import start_voice_generation
+        project = await self._get_project(project_id)
+        project.current_stage = STAGE_MAP["voice"]
+        await self.session.flush()
+        
+        task = start_voice_generation.delay(str(project_id), str(user_id), voice_id)
+        return {"task_id": task.id, "status": "processing"}
+
+    async def start_avatar(self, user_id: uuid.UUID, project_id: uuid.UUID, avatar_id: str) -> dict:
+        """Trigger Celery task to run LangGraph for avatar generation."""
+        from app.workflow.tasks import start_avatar_generation
+        project = await self._get_project(project_id)
+        project.current_stage = STAGE_MAP["avatar"]
+        await self.session.flush()
+        
+        task = start_avatar_generation.delay(str(project_id), str(user_id), avatar_id)
+        return {"task_id": task.id, "status": "processing"}
+

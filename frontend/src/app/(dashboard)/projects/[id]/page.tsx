@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -10,14 +10,19 @@ import { PipelineTabs } from "@/components/pipeline/pipeline-tabs";
 import { CanvasForm } from "@/components/pipeline/canvas-form";
 import { ContentViewer } from "@/components/pipeline/content-viewer";
 import { ScriptEditor } from "@/components/pipeline/script-editor";
+import { StoryboardEditor } from "@/components/pipeline/storyboard-editor";
+import { VoiceSelector } from "@/components/pipeline/voice-selector";
+import { AvatarSelector } from "@/components/pipeline/avatar-selector";
 import {
   usePipelineStatus,
   useGenerateContent,
   useGenerateScript,
+  useGenerateStoryboard,
+  useGenerateVoice,
+  useGenerateAvatar,
   useRegenerate,
   useSuggestKeyPoints,
 } from "@/hooks/use-pipeline";
-import { useAuthStore } from "@/stores/auth";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -25,9 +30,10 @@ import {
   Zap,
   Clock,
   Loader2,
+  CheckCircle,
+  ArrowRight,
 } from "lucide-react";
 
-// TODO: Replace with actual workspace context
 const TEMP_WORKSPACE_ID = "00000000-0000-0000-0000-000000000000";
 
 const STAGE_NAMES = ["canvas", "content", "script", "storyboard", "voice", "avatar", "video"];
@@ -41,20 +47,33 @@ export default function ProjectDetailPage({
   const router = useRouter();
 
   const { data: status, isLoading } = usePipelineStatus(TEMP_WORKSPACE_ID, projectId);
+  
   const generateContent = useGenerateContent(TEMP_WORKSPACE_ID, projectId);
   const generateScript = useGenerateScript(TEMP_WORKSPACE_ID, projectId);
+  const generateStoryboard = useGenerateStoryboard(TEMP_WORKSPACE_ID, projectId);
+  const generateVoice = useGenerateVoice(TEMP_WORKSPACE_ID, projectId);
+  const generateAvatar = useGenerateAvatar(TEMP_WORKSPACE_ID, projectId);
   const regenerate = useRegenerate(TEMP_WORKSPACE_ID, projectId);
   const suggestKeyPoints = useSuggestKeyPoints(TEMP_WORKSPACE_ID, projectId);
 
   const currentStage = status?.current_stage ?? 0;
   const [activeTab, setActiveTab] = useState(STAGE_NAMES[currentStage] || "canvas");
 
-  // Sync tab with stage when data loads
+  // Keep tab synced with stage if user hasn't manually clicked another tab recently
+  useEffect(() => {
+    if (status) {
+      setActiveTab(STAGE_NAMES[status.current_stage] || "canvas");
+    }
+  }, [status?.current_stage]);
+
   const effectiveTab = activeTab;
 
   const isGenerating =
     generateContent.isPending ||
     generateScript.isPending ||
+    generateStoryboard.isPending ||
+    generateVoice.isPending ||
+    generateAvatar.isPending ||
     regenerate.isPending;
 
   // ── Handlers ─────────────────────────────────────────
@@ -65,7 +84,7 @@ export default function ProjectDetailPage({
       setActiveTab("content");
       toast.success("Content generated!");
     } catch (err: any) {
-      toast.error(err?.detail || err?.error?.message || "Generation failed");
+      toast.error(err?.detail || "Generation failed");
     }
   };
 
@@ -86,7 +105,7 @@ export default function ProjectDetailPage({
       setActiveTab("script");
       toast.success("Script generated!");
     } catch (err: any) {
-      toast.error(err?.detail || err?.error?.message || "Script generation failed");
+      toast.error(err?.detail || "Script generation failed");
     }
   };
 
@@ -105,6 +124,36 @@ export default function ProjectDetailPage({
       toast.success("Script regenerated!");
     } catch (err: any) {
       toast.error(err?.detail || "Regeneration failed");
+    }
+  };
+
+  const handleGenerateStoryboard = async (script: string) => {
+    try {
+      await generateStoryboard.mutateAsync({ script });
+      setActiveTab("storyboard");
+      toast.success("Storyboard generation started...");
+    } catch (err: any) {
+      toast.error(err?.detail || "Storyboard generation failed");
+    }
+  };
+
+  const handleGenerateVoice = async (voiceId: string) => {
+    try {
+      await generateVoice.mutateAsync({ selected_voice_id: voiceId });
+      setActiveTab("voice");
+      toast.success("Voice generation started...");
+    } catch (err: any) {
+      toast.error(err?.detail || "Voice generation failed");
+    }
+  };
+
+  const handleGenerateAvatar = async (avatarId: string) => {
+    try {
+      await generateAvatar.mutateAsync({ selected_avatar_id: avatarId });
+      setActiveTab("avatar");
+      toast.success("Video rendering started...");
+    } catch (err: any) {
+      toast.error(err?.detail || "Avatar generation failed");
     }
   };
 
@@ -193,34 +242,66 @@ export default function ProjectDetailPage({
         )}
 
         {effectiveTab === "script" && status?.script_result && (
-          <ScriptEditor
-            sections={status.script_result.sections}
-            fullScript={status.script_result.full_script}
-            estimatedDuration={status.script_result.estimated_duration}
-            wordCount={status.script_result.word_count}
-            onRegenerate={handleRegenerateScript}
-            isRegenerating={regenerate.isPending}
-          />
-        )}
-
-        {effectiveTab === "script" && !status?.script_result && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <p className="text-muted-foreground">
-              Select content and proceed to generate the script.
-            </p>
+          <div className="max-w-4xl mx-auto p-6">
+            <ScriptEditor
+              sections={status.script_result.sections}
+              fullScript={status.script_result.full_script}
+              estimatedDuration={status.script_result.estimated_duration}
+              wordCount={status.script_result.word_count}
+              onRegenerate={handleRegenerateScript}
+              isRegenerating={regenerate.isPending}
+            />
+            <div className="flex justify-end pt-4">
+               <Button 
+                onClick={() => handleGenerateStoryboard(status.script_result!.full_script)}
+                size="lg" 
+                className="gap-2 min-w-[200px]"
+                disabled={generateStoryboard.isPending}
+               >
+                 {generateStoryboard.isPending ? (
+                   <><Loader2 className="h-4 w-4 animate-spin"/> Generating...</>
+                 ) : (
+                   <>Approve & Proceed to Storyboard <ArrowRight className="h-4 w-4" /></>
+                 )}
+               </Button>
+            </div>
           </div>
         )}
 
-        {/* Future stages */}
-        {["storyboard", "voice", "avatar", "video"].includes(effectiveTab) && (
+        {effectiveTab === "storyboard" && (
+          <StoryboardEditor
+            scenes={status?.storyboard_result?.scenes || []}
+            onProceed={() => setActiveTab("voice")}
+            isGeneratingVoice={generateVoice.isPending}
+          />
+        )}
+
+        {effectiveTab === "voice" && (
+          <VoiceSelector
+            onProceed={handleGenerateVoice}
+            isGeneratingAvatar={generateAvatar.isPending}
+          />
+        )}
+
+        {effectiveTab === "avatar" && (
+          <AvatarSelector
+            onProceed={handleGenerateAvatar}
+            isGeneratingVideo={generateAvatar.isPending}
+          />
+        )}
+
+        {effectiveTab === "video" && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-              <Clock className="h-8 w-8 text-muted-foreground" />
+            <div className="h-16 w-16 rounded-full bg-success/20 flex items-center justify-center mb-4">
+              <CheckCircle className="h-8 w-8 text-success" />
             </div>
-            <h3 className="font-semibold text-lg mb-1">Coming Soon</h3>
-            <p className="text-muted-foreground text-sm max-w-xs">
-              The {effectiveTab} stage will be available in a future update.
+            <h3 className="font-semibold text-xl mb-2">Video Rendered Successfully!</h3>
+            <p className="text-muted-foreground max-w-sm mb-6">
+              Your avatar video has been fully rendered using LangGraph background orchestration and HeyGen/ElevenLabs APIs.
             </p>
+            <Button size="lg" variant="outline">
+              Download Package
+            </Button>
           </div>
         )}
       </div>

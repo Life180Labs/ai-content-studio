@@ -204,16 +204,7 @@ export function ScriptEditor({
         </Card>
       )}
 
-      {/* Proceed / Coming Soon */}
-      <div className="flex justify-end pt-2">
-        <Button disabled size="lg" className="gap-2 min-w-[200px] opacity-60">
-          <Lock className="h-4 w-4" />
-          Approve & Proceed to Storyboard
-          <Badge variant="secondary" className="ml-1 text-[10px]">
-            Coming Soon
-          </Badge>
-        </Button>
-      </div>
+
     </div>
   );
 }

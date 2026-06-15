@@ -28,9 +28,37 @@ export function VoiceSelector({ onProceed, isGeneratingAvatar }: VoiceSelectorPr
 
   const handlePlay = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    // In a real app, this would play an HTML5 audio element
-    setPlayingId(id);
-    setTimeout(() => setPlayingId(null), 2000);
+    
+    // Stop any existing speech
+    window.speechSynthesis.cancel();
+    
+    const voiceDef = VOICES.find(v => v.id === id);
+    const text = `Hi, I'm ${voiceDef?.name}. This is a preview of my voice.`;
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Basic mapping to make voices sound slightly different based on mock properties
+    if (voiceDef?.gender === "Female") {
+      utterance.pitch = 1.3;
+      utterance.rate = 1.05;
+    } else {
+      utterance.pitch = 0.8;
+      utterance.rate = 0.95;
+    }
+    
+    if (id === "Mimi") {
+      utterance.pitch = 1.6;
+      utterance.rate = 1.1;
+    }
+    if (id === "Drew") {
+      utterance.pitch = 0.5;
+    }
+    
+    utterance.onstart = () => setPlayingId(id);
+    utterance.onend = () => setPlayingId(null);
+    utterance.onerror = () => setPlayingId(null);
+    
+    window.speechSynthesis.speak(utterance);
   };
 
   return (

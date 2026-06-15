@@ -20,6 +20,10 @@ from app.schemas.pipeline import (
     ScriptGenerateRequest,
     ScriptResult,
     StoryboardGenerateRequest,
+    StoryboardResult,
+    StoryboardSaveRequest,
+    SceneRegenerateRequest,
+    StoryboardScene,
     VoiceGenerateRequest,
     AvatarGenerateRequest,
 )
@@ -155,6 +159,47 @@ async def generate_storyboard(
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+@router.post("/storyboard/save", response_model=StoryboardResult)
+async def save_storyboard(
+    workspace_id: str,
+    project_id: str,
+    data: StoryboardSaveRequest,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Manually save storyboard edits as a draft."""
+    pid = _parse_uuid(project_id, "project_id")
+    service = PipelineService(session)
+    return await service.save_storyboard(
+        user_id=user_id,
+        project_id=pid,
+        scenes=data.scenes,
+        video_frame_size=data.video_frame_size,
+        video_quality=data.video_quality,
+    )
+
+@router.post("/storyboard/regenerate-scene", response_model=StoryboardScene)
+async def regenerate_storyboard_scene(
+    workspace_id: str,
+    project_id: str,
+    data: SceneRegenerateRequest,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Regenerate a single storyboard scene."""
+    pid = _parse_uuid(project_id, "project_id")
+    try:
+        service = PipelineService(session)
+        return await service.regenerate_scene(
+            user_id=user_id,
+            project_id=pid,
+            scene_index=data.scene_index,
+            current_scene=data.current_scene,
+            additional_context=data.additional_context,
+        )
+    except AIProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
 @router.post("/voice")
 async def generate_voice(
     workspace_id: str,
@@ -171,6 +216,9 @@ async def generate_voice(
             user_id=user_id,
             project_id=pid,
             voice_id=data.selected_voice_id,
+            storyboard_scenes=data.storyboard_scenes,
+            video_frame_size=data.video_frame_size,
+            video_quality=data.video_quality,
         )
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))

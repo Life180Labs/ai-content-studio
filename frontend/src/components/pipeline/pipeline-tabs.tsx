@@ -7,10 +7,10 @@ const STAGES = [
   { key: "canvas", label: "Canvas", index: 0 },
   { key: "content", label: "Content", index: 1 },
   { key: "script", label: "Script", index: 2 },
-  { key: "storyboard", label: "Storyboard", index: 3, locked: true },
-  { key: "voice", label: "Voice", index: 4, locked: true },
-  { key: "avatar", label: "Avatar", index: 5, locked: true },
-  { key: "video", label: "Video", index: 6, locked: true },
+  { key: "storyboard", label: "Storyboard", index: 3 },
+  { key: "voice", label: "Voice", index: 4 },
+  { key: "avatar", label: "Avatar", index: 5 },
+  { key: "video", label: "Video", index: 6 },
 ];
 
 interface PipelineTabsProps {

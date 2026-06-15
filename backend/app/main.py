@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
     setup_logging()
     import structlog
+    import app.worker  # Initialize celery app so shared_task knows the broker URL
     logger = structlog.get_logger("app")
     logger.info("application_starting", environment=get_settings().ENVIRONMENT)
     yield

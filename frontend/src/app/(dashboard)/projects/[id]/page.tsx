@@ -150,11 +150,21 @@ export default function ProjectDetailPage({
 
   const handleGenerateVoice = async (voiceId: string) => {
     try {
-      await generateVoice.mutateAsync({ selected_voice_id: voiceId });
-      setActiveTab("voice");
+      const storyboardResult = status?.storyboard_result;
+      if (!storyboardResult) {
+        throw new Error("Storyboard data missing. Please save the storyboard first.");
+      }
+
+      await generateVoice.mutateAsync({ 
+        selected_voice_id: voiceId,
+        storyboard_scenes: storyboardResult.scenes,
+        video_frame_size: storyboardResult.video_frame_size || "16:9",
+        video_quality: storyboardResult.video_quality || "1080p"
+      });
+      setActiveTab("avatar");
       toast.success("Voice generation started...");
     } catch (err: any) {
-      toast.error(err?.detail || "Voice generation failed");
+      toast.error(err?.detail || err.message || "Voice generation failed");
     }
   };
 
@@ -281,7 +291,11 @@ export default function ProjectDetailPage({
 
         {effectiveTab === "storyboard" && (
           <StoryboardEditor
-            scenes={status?.storyboard_result?.scenes || []}
+            workspaceId={workspaceId}
+            projectId={projectId}
+            initialScenes={status?.storyboard_result?.scenes || []}
+            initialVideoFrameSize={status?.storyboard_result?.video_frame_size || "16:9"}
+            initialVideoQuality={status?.storyboard_result?.video_quality || "1080p"}
             onProceed={() => setActiveTab("voice")}
             isGeneratingVoice={generateVoice.isPending}
           />

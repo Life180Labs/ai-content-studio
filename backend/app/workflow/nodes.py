@@ -42,12 +42,14 @@ async def generate_storyboard(state: PipelineGraphState) -> dict:
         return {"error_message": "No script provided to storyboard node."}
 
     system_prompt = """You are an expert video director. Convert the following video script into a structured storyboard.
+CRITICAL: No single scene should cross the 8-second time limit. Therefore, the "voice_text" for EACH scene MUST NOT exceed 20 words. Break the script down into smaller, faster-paced scenes if necessary.
+
 Return ONLY valid JSON with this structure:
 {
   "scenes": [
     {
       "scene_index": 1,
-      "voice_text": "The exact spoken text for this scene.",
+      "voice_text": "The exact spoken text for this scene (max 20 words).",
       "visual_prompt": "A highly detailed image generation prompt describing the scene.",
       "avatar_action": "Describe what the AI avatar is doing (e.g., pointing, smiling).",
       "camera_direction": "e.g., Close-up, Zoom in, Pan right"

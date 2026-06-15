@@ -5,7 +5,11 @@ Celery tasks for executing LangGraph workflows in the background.
 from __future__ import annotations
 
 import asyncio
+import sys
 from typing import Any
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 import structlog
@@ -101,6 +105,24 @@ async def _run_graph_async(
         # Actually, if we pass initial_state, it updates the state.
         result = await graph.ainvoke(initial_state, config)
         
+        # Save output to PipelineRun so the frontend polling endpoint sees it
+        async with async_session_factory() as run_session:
+            from app.models.pipeline_run import PipelineRun
+            import uuid
+            
+            if node == "generate_storyboard" and not result.get("error_message"):
+                run = PipelineRun(
+                    project_id=uuid.UUID(project_id),
+                    stage="storyboard",
+                    input_data={"script": script[:500]},
+                    output_data={"scenes": result.get("storyboard_scenes", [])},
+                    provider="langgraph",
+                    model="pipeline",
+                    status="success"
+                )
+                run_session.add(run)
+                await run_session.commit()
+
         return {
             "current_node": result.get("current_node"),
             "error_message": result.get("error_message"),
@@ -118,12 +140,20 @@ def start_storyboard_generation(project_id: str, user_id: str, script: str) -> d
 
 
 @shared_task(name="app.workflow.tasks.start_voice_generation")
-def start_voice_generation(project_id: str, user_id: str, selected_voice_id: str) -> dict:
+def start_voice_generation(project_id: str, user_id: str, selected_voice_id: str, storyboard_scenes: list[dict] | None = None, video_settings: dict | None = None) -> dict:
     """Celery task to resume workflow and generate voice."""
     logger.info("celery_task_started", task="start_voice", project_id=project_id)
     # The state should already have the script and scenes since we resume the thread_id
-    # But we pass the updated voice_id
-    return asyncio.run(_run_graph_async(project_id, user_id, script="", node="generate_voice", selected_voice_id=selected_voice_id))
+    # But we pass the updated voice_id and storyboard scenes if edited
+    return asyncio.run(_run_graph_async(
+        project_id, 
+        user_id, 
+        script="", 
+        node="generate_voice", 
+        selected_voice_id=selected_voice_id,
+        storyboard_scenes=storyboard_scenes,
+        video_settings=video_settings
+    ))
 
 
 @shared_task(name="app.workflow.tasks.start_avatar_generation")

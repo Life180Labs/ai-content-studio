@@ -133,6 +133,7 @@ class PipelineStatusResponse(BaseModel):
     canvas_data: dict[str, Any] | None = None
     content_result: ContentResult | None = None
     script_result: ScriptResult | None = None
+    storyboard_result: StoryboardResult | None = None
     runs: list[PipelineRunResponse] = []
     total_cost_usd: float = 0.0
     total_tokens: int = 0
@@ -148,16 +149,31 @@ class StoryboardScene(BaseModel):
 
 class StoryboardResult(BaseModel):
     scenes: list[StoryboardScene]
+    video_frame_size: str = "16:9"
+    video_quality: str = "1080p"
     project_id: str
     stage: str = "storyboard"
 
 class StoryboardGenerateRequest(BaseModel):
     script: str
 
+class StoryboardSaveRequest(BaseModel):
+    scenes: list[StoryboardScene]
+    video_frame_size: str = "16:9"
+    video_quality: str = "1080p"
+
+class SceneRegenerateRequest(BaseModel):
+    scene_index: int
+    additional_context: str
+    current_scene: StoryboardScene
+
 # ── Voice (Step 5) ──────────────────────────────────────────
 
 class VoiceGenerateRequest(BaseModel):
     selected_voice_id: str
+    storyboard_scenes: list[StoryboardScene]
+    video_frame_size: str = "16:9"
+    video_quality: str = "1080p"
 
 # ── Avatar (Step 6) ─────────────────────────────────────────
 

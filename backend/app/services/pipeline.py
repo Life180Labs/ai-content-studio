@@ -27,6 +27,8 @@ from app.schemas.pipeline import (
     PipelineStatusResponse,
     ScriptResult,
     ScriptSection,
+    StoryboardResult,
+    StoryboardScene,
 )
 from app.services.ai_preference import AIPreferenceService
 
@@ -543,6 +545,20 @@ Return ONLY valid JSON."""
                 project_id=str(project_id),
             )
 
+        # Reconstruct storyboard result
+        storyboard_result = None
+        storyboard_runs = [r for r in runs if r.stage == "storyboard" and r.status == "success"]
+        if storyboard_runs:
+            sr = storyboard_runs[0]
+            od = sr.output_data or {}
+            scenes = [StoryboardScene(**s) for s in od.get("scenes", [])]
+            storyboard_result = StoryboardResult(
+                scenes=scenes,
+                video_frame_size=od.get("video_frame_size", "16:9"),
+                video_quality=od.get("video_quality", "1080p"),
+                project_id=str(project_id)
+            )
+
         return PipelineStatusResponse(
             project_id=str(project_id),
             current_stage=project.current_stage,
@@ -550,6 +566,7 @@ Return ONLY valid JSON."""
             canvas_data=project.canvas_data,
             content_result=content_result,
             script_result=script_result,
+            storyboard_result=storyboard_result,
             runs=run_responses,
             total_cost_usd=total_cost,
             total_tokens=total_tokens,
@@ -568,14 +585,122 @@ Return ONLY valid JSON."""
         task = start_storyboard_generation.delay(str(project_id), str(user_id), script)
         return {"task_id": task.id, "status": "processing"}
 
-    async def start_voice(self, user_id: uuid.UUID, project_id: uuid.UUID, voice_id: str) -> dict:
+    async def save_storyboard(
+        self, user_id: uuid.UUID, project_id: uuid.UUID, scenes: list[StoryboardScene], video_frame_size: str, video_quality: str
+    ) -> StoryboardResult:
+        """Manually save storyboard edits as a successful run without invoking AI."""
+        # Ensure project exists
+        project = await self._get_project(project_id)
+        project.current_stage = STAGE_MAP["storyboard"]
+        await self.session.flush()
+
+        await self._save_run(
+            project_id=project_id,
+            stage="storyboard",
+            input_data={"manual_edit": True},
+            output_data={
+                "scenes": [s.model_dump() for s in scenes],
+                "video_frame_size": video_frame_size,
+                "video_quality": video_quality
+            },
+            response=None,
+            status="success"
+        )
+        return StoryboardResult(
+            scenes=scenes,
+            video_frame_size=video_frame_size,
+            video_quality=video_quality,
+            project_id=str(project_id)
+        )
+
+    async def regenerate_scene(
+        self, user_id: uuid.UUID, project_id: uuid.UUID, scene_index: int, current_scene: StoryboardScene, additional_context: str
+    ) -> StoryboardScene:
+        """Regenerate a single storyboard scene."""
+        project = await self._get_project(project_id)
+        gateway = await self._get_gateway(user_id)
+
+        system_prompt = """You are an expert video director. You are rewriting a SINGLE scene of a storyboard.
+Return the updated scene as valid JSON with this exact structure:
+{
+  "voice_text": "...",
+  "visual_prompt": "...",
+  "avatar_action": "...",
+  "camera_direction": "..."
+}
+Return ONLY valid JSON."""
+
+        prompt = f"""Here is the current scene:
+Spoken Script: {current_scene.voice_text}
+Visual Prompt: {current_scene.visual_prompt}
+Avatar Action: {current_scene.avatar_action}
+Camera Direction: {current_scene.camera_direction}
+
+Please rewrite this scene based on the following feedback/context:
+{additional_context}
+
+Make sure the spoken script matches the tone, but incorporate the new changes.
+Keep the visual prompt descriptive and cinematic."""
+
+        response = await gateway.generate(
+            prompt,
+            system_prompt=system_prompt,
+            task="script",
+            temperature=0.7,
+            max_tokens=1024,
+        )
+
+        try:
+            text = response.content.strip()
+            if text.startswith("```"):
+                text = text.split("\\n", 1)[1].rsplit("```", 1)[0].strip()
+
+            scene_data = json.loads(text)
+            
+            updated_scene = StoryboardScene(
+                scene_index=scene_index,
+                voice_text=scene_data.get("voice_text", current_scene.voice_text),
+                visual_prompt=scene_data.get("visual_prompt", current_scene.visual_prompt),
+                avatar_action=scene_data.get("avatar_action", current_scene.avatar_action),
+                camera_direction=scene_data.get("camera_direction", current_scene.camera_direction),
+            )
+            return updated_scene
+        except Exception as e:
+            logger.error("regenerate_scene_error", error=str(e), content=response.content)
+            raise AIProviderError("Failed to parse regenerated scene. Please try again.")
+
+    async def start_voice(
+        self, user_id: uuid.UUID, project_id: uuid.UUID, voice_id: str, 
+        storyboard_scenes: list[StoryboardScene] | None = None,
+        video_frame_size: str = "16:9",
+        video_quality: str = "1080p"
+    ) -> dict:
         """Trigger Celery task to run LangGraph for voice generation."""
         from app.workflow.tasks import start_voice_generation
         project = await self._get_project(project_id)
         project.current_stage = STAGE_MAP["voice"]
+        
+        # Save the confirmed storyboard edits to the run history
+        if storyboard_scenes:
+            await self._save_run(
+                project_id=project_id,
+                stage="storyboard",
+                input_data={"manual_edit": True},
+                output_data={
+                    "scenes": [s.model_dump() for s in storyboard_scenes],
+                    "video_frame_size": video_frame_size,
+                    "video_quality": video_quality
+                },
+                response=None,
+                status="success"
+            )
+
         await self.session.flush()
         
-        task = start_voice_generation.delay(str(project_id), str(user_id), voice_id)
+        scenes_dicts = [s.model_dump() for s in storyboard_scenes] if storyboard_scenes else None
+        video_settings = {"frame_size": video_frame_size, "quality": video_quality}
+
+        task = start_voice_generation.delay(str(project_id), str(user_id), voice_id, scenes_dicts, video_settings)
         return {"task_id": task.id, "status": "processing"}
 
     async def start_avatar(self, user_id: uuid.UUID, project_id: uuid.UUID, avatar_id: str) -> dict:

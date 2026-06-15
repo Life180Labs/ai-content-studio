@@ -59,6 +59,8 @@ export interface StoryboardScene {
 
 export interface StoryboardResult {
   scenes: StoryboardScene[];
+  video_frame_size: string;
+  video_quality: string;
   project_id: string;
   stage: string;
 }
@@ -180,14 +182,39 @@ export function useGenerateStoryboard(workspaceId: string | null, projectId: str
   });
 }
 
+export interface VoiceGeneratePayload {
+  selected_voice_id: string;
+  storyboard_scenes: StoryboardScene[];
+  video_frame_size: string;
+  video_quality: string;
+}
+
 export function useGenerateVoice(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
-  return useMutation<{ task_id: string }, unknown, { selected_voice_id: string }>({
+  return useMutation<{ task_id: string }, unknown, VoiceGeneratePayload>({
     mutationFn: (data) =>
       api.post(`${pipelineUrl(workspaceId, projectId)}/voice`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
     },
+  });
+}
+
+export function useSaveStoryboard(workspaceId: string | null, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<StoryboardResult, unknown, { scenes: StoryboardScene[], video_frame_size: string, video_quality: string }>({
+    mutationFn: (data) =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/storyboard/save`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
+    },
+  });
+}
+
+export function useRegenerateScene(workspaceId: string | null, projectId: string) {
+  return useMutation<StoryboardScene, unknown, { scene_index: number, additional_context: string, current_scene: StoryboardScene }>({
+    mutationFn: (data) =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/storyboard/regenerate-scene`, data),
   });
 }
 

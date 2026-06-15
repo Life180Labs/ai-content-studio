@@ -119,13 +119,21 @@ ai-content-studio/
 | `POST` | `.../pipeline/regenerate` | Regenerate specific pipeline stage |
 | `GET` | `.../pipeline/status` | Get current project pipeline state |
 
-### Phase 3: LangGraph & Media Generation
+### Phase 3: Storyboard & Granular Editing
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `.../pipeline/storyboard` | Generate scene-by-scene storyboard (Celery task) |
+| `POST` | `.../pipeline/storyboard/save` | Manually save draft edits of the storyboard scenes |
+| `POST` | `.../pipeline/storyboard/regenerate-scene` | Regenerate a specific scene based on user feedback |
+
+### Phase 4: Voice, Avatar & Video Generation
+
+| Method | Path | Description |
+|--------|------|-------------|
 | `POST` | `.../pipeline/voice` | Generate audio via ElevenLabs (Celery task) |
 | `POST` | `.../pipeline/avatar` | Generate video via HeyGen (Celery task) |
+| `GET` | `.../pipeline/videos/status` | Poll HeyGen API for rendering status and retrieve final MP4 URL |
 
 ## Environment Variables
 

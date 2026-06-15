@@ -8,7 +8,7 @@ import { ArrowRight, Check, UserSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AvatarSelectorProps {
-  onProceed: (avatarId: string) => void;
+  onProceed: (payload: { selected_avatar_id: string; use_custom_voice: boolean }) => void;
   isGeneratingVideo: boolean;
 }
 
@@ -22,8 +22,12 @@ const AVATARS = [
   { id: "Matt_public", name: "Matt", style: "Business", tag: "Sales" },
 ];
 
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+
 export function AvatarSelector({ onProceed, isGeneratingVideo }: AvatarSelectorProps) {
   const [selectedAvatar, setSelectedAvatar] = useState<string>("Anna_public_3_20240108");
+  const [useCustomVoice, setUseCustomVoice] = useState<boolean>(true);
 
   return (
     <div className="space-y-6 p-6 max-w-5xl mx-auto">
@@ -71,9 +75,25 @@ export function AvatarSelector({ onProceed, isGeneratingVideo }: AvatarSelectorP
         ))}
       </div>
 
-      <div className="flex justify-end pt-4">
+      <div className="flex items-center justify-between pt-6 border-t border-border mt-4">
+        <div className="flex items-center space-x-2 bg-muted/50 p-3 rounded-lg border border-border/50">
+          <Switch 
+            id="custom-voice" 
+            checked={useCustomVoice}
+            onCheckedChange={setUseCustomVoice}
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="custom-voice" className="text-sm font-medium cursor-pointer">
+              Use Custom ElevenLabs Voice
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {useCustomVoice ? "Avatar will perfectly lip-sync to the voice you generated." : "Avatar will use its default built-in AI voice."}
+            </p>
+          </div>
+        </div>
+
         <Button
-          onClick={() => onProceed(selectedAvatar)}
+          onClick={() => onProceed({ selected_avatar_id: selectedAvatar, use_custom_voice: useCustomVoice })}
           size="lg"
           className="gap-2 min-w-[200px]"
           disabled={isGeneratingVideo}

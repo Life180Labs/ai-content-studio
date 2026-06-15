@@ -13,6 +13,7 @@ import { ScriptEditor } from "@/components/pipeline/script-editor";
 import { StoryboardEditor } from "@/components/pipeline/storyboard-editor";
 import { VoiceSelector } from "@/components/pipeline/voice-selector";
 import { AvatarSelector } from "@/components/pipeline/avatar-selector";
+import { VideoViewer } from "@/components/pipeline/video-viewer";
 import {
   usePipelineStatus,
   useGenerateContent,
@@ -168,10 +169,10 @@ export default function ProjectDetailPage({
     }
   };
 
-  const handleGenerateAvatar = async (avatarId: string) => {
+  const handleGenerateAvatar = async (payload: { selected_avatar_id: string; use_custom_voice: boolean }) => {
     try {
-      await generateAvatar.mutateAsync({ selected_avatar_id: avatarId });
-      setActiveTab("avatar");
+      await generateAvatar.mutateAsync(payload);
+      setActiveTab("video");
       toast.success("Video rendering started...");
     } catch (err: any) {
       toast.error(err?.detail || "Avatar generation failed");
@@ -316,18 +317,11 @@ export default function ProjectDetailPage({
         )}
 
         {effectiveTab === "video" && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="h-16 w-16 rounded-full bg-success/20 flex items-center justify-center mb-4">
-              <CheckCircle className="h-8 w-8 text-success" />
-            </div>
-            <h3 className="font-semibold text-xl mb-2">Video Rendered Successfully!</h3>
-            <p className="text-muted-foreground max-w-sm mb-6">
-              Your avatar video has been fully rendered using LangGraph background orchestration and HeyGen/ElevenLabs APIs.
-            </p>
-            <Button size="lg" variant="outline">
-              Download Package
-            </Button>
-          </div>
+          <VideoViewer
+            workspaceId={workspaceId}
+            projectId={projectId}
+            scenes={status?.storyboard_result?.scenes || []}
+          />
         )}
       </div>
     </div>

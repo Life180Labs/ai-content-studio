@@ -78,18 +78,23 @@ export interface PipelineRun {
   created_at: string;
 }
 
-export interface PipelineStatus {
+export type PipelineStatusResponse = {
   project_id: string;
-  current_stage: number;
-  stage_name: string;
-  canvas_data: CanvasInput | null;
-  content_result: ContentResult | null;
-  script_result: ScriptResult | null;
-  storyboard_result?: StoryboardResult | null;
+  stage: string;
+  content_result?: ContentResult;
+  script_result?: ScriptResult;
+  storyboard_result?: StoryboardResult;
+  voice_result?: any;
+  video_result?: any;
   runs: PipelineRun[];
   total_cost_usd: number;
   total_tokens: number;
-}
+};
+
+export type AvatarGeneratePayload = {
+  selected_avatar_id: string;
+  use_custom_voice: boolean;
+};
 
 // ── Hooks ──────────────────────────────────────────────────
 
@@ -98,7 +103,7 @@ function pipelineUrl(workspaceId: string | null, projectId: string) {
 }
 
 export function usePipelineStatus(workspaceId: string | null, projectId: string) {
-  return useQuery<PipelineStatus>({
+  return useQuery<PipelineStatusResponse>({
     queryKey: ["pipeline", projectId],
     queryFn: () =>
       api.get(`${pipelineUrl(workspaceId, projectId)}/status`),
@@ -108,11 +113,7 @@ export function usePipelineStatus(workspaceId: string | null, projectId: string)
       const data = query.state.data;
       if (!data) return false;
       // If we are on storyboard, voice, avatar, we poll
-      if (data.current_stage >= 3) {
-        // Just poll while building for simplicity, but stop if we reach the end
-        return 3000;
-      }
-      return false;
+      return 3000;
     },
   });
 }
@@ -220,11 +221,24 @@ export function useRegenerateScene(workspaceId: string | null, projectId: string
 
 export function useGenerateAvatar(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
-  return useMutation<{ task_id: string }, unknown, { selected_avatar_id: string }>({
-    mutationFn: (data) =>
-      api.post(`${pipelineUrl(workspaceId, projectId)}/avatar`, data),
+  return useMutation<{ task_id: string }, unknown, AvatarGeneratePayload>({
+    mutationFn: (payload) =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/avatar`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
     },
+  });
+}
+
+export function usePollVideoStatus(workspaceId: string | null, projectId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["video-status", projectId],
+    queryFn: async () => {
+      const res = await api.get(`${pipelineUrl(workspaceId, projectId)}/videos/status`);
+      return res.data;
+    },
+    enabled: !!workspaceId && !!projectId && enabled,
+    refetchInterval: 5000, // Poll every 5 seconds
+    retry: false,
   });
 }

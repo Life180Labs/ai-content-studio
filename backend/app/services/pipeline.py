@@ -559,14 +559,37 @@ Return ONLY valid JSON."""
                 project_id=str(project_id)
             )
 
+        # Reconstruct voice result
+        voice_result = None
+        voice_runs = [r for r in runs if r.stage == "voice" and r.status == "success"]
+        if voice_runs:
+            sr = voice_runs[0]
+            od = sr.output_data or {}
+            voice_result = VoiceResult(
+                audio_paths=od.get("audio_paths", {}),
+                project_id=str(project_id)
+            )
+
+        # Reconstruct video result
+        video_result = None
+        video_runs = [r for r in runs if r.stage == "video" and r.status == "success"]
+        if video_runs:
+            sr = video_runs[0]
+            od = sr.output_data or {}
+            videos = {k: VideoStatus(**v) if isinstance(v, dict) else VideoStatus(video_id=str(v), status="pending") for k, v in od.get("videos", {}).items()}
+            video_result = VideoResult(
+                videos=videos,
+                project_id=str(project_id)
+            )
+
         return PipelineStatusResponse(
             project_id=str(project_id),
-            current_stage=project.current_stage,
-            stage_name=stage_name,
-            canvas_data=project.canvas_data,
+            stage=stage_name,
             content_result=content_result,
             script_result=script_result,
             storyboard_result=storyboard_result,
+            voice_result=voice_result,
+            video_result=video_result,
             runs=run_responses,
             total_cost_usd=total_cost,
             total_tokens=total_tokens,
@@ -703,13 +726,81 @@ Keep the visual prompt descriptive and cinematic."""
         task = start_voice_generation.delay(str(project_id), str(user_id), voice_id, scenes_dicts, video_settings)
         return {"task_id": task.id, "status": "processing"}
 
-    async def start_avatar(self, user_id: uuid.UUID, project_id: uuid.UUID, avatar_id: str) -> dict:
+    async def start_avatar(
+        self, user_id: uuid.UUID, project_id: uuid.UUID, avatar_id: str, use_custom_voice: bool = True
+    ) -> dict:
         """Trigger Celery task to run LangGraph for avatar generation."""
         from app.workflow.tasks import start_avatar_generation
         project = await self._get_project(project_id)
-        project.current_stage = STAGE_MAP["avatar"]
-        await self.session.flush()
+        project.current_stage = STAGE_MAP["video"]
+        await self.session.commit()
         
-        task = start_avatar_generation.delay(str(project_id), str(user_id), avatar_id)
+        task = start_avatar_generation.delay(str(project_id), str(user_id), avatar_id, use_custom_voice)
         return {"task_id": task.id, "status": "processing"}
 
+    async def check_video_status(self, user_id: uuid.UUID, project_id: uuid.UUID) -> VideoResult | None:
+        """Poll HeyGen API for the latest video statuses and update DB."""
+        # 1. Fetch latest Video PipelineRun
+        stmt = (
+            select(PipelineRun)
+            .where(PipelineRun.project_id == project_id)
+            .where(PipelineRun.stage == "video")
+            .where(PipelineRun.status == "success")
+            .order_by(PipelineRun.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        run = result.scalar_one_or_none()
+        if not run or not run.output_data or "videos" not in run.output_data:
+            return None
+
+        videos_dict = run.output_data["videos"]
+        gateway = await self._get_gateway(user_id)
+        heygen_key = gateway.provider_keys.get("heygen")
+        if not heygen_key:
+            return VideoResult(videos={k: VideoStatus(**v) if isinstance(v, dict) else VideoStatus(video_id=str(v), status="failed", error_message="Missing HeyGen API key") for k, v in videos_dict.items()}, project_id=str(project_id))
+
+        import httpx
+        updated = False
+        new_videos_dict = {}
+
+        async with httpx.AsyncClient() as client:
+            headers = {"x-api-key": heygen_key}
+            for scene_idx, v_data in videos_dict.items():
+                # If it's just a string, it's the raw video_id from previous implementation
+                if isinstance(v_data, str):
+                    v_data = {"video_id": v_data, "status": "pending"}
+                
+                vid = v_data.get("video_id")
+                status = v_data.get("status")
+                
+                if status in ["completed", "failed"] or not vid:
+                    new_videos_dict[scene_idx] = v_data
+                    continue
+                
+                try:
+                    url = f"https://api.heygen.com/v1/video_status.get?video_id={vid}"
+                    resp = await client.get(url, headers=headers, timeout=10.0)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    
+                    if data["code"] == 100:
+                        v_data["status"] = data["data"]["status"] # pending, processing, completed, failed
+                        if v_data["status"] == "completed":
+                            v_data["video_url"] = data["data"]["video_url"]
+                        elif v_data["status"] == "failed":
+                            v_data["error_message"] = data["data"].get("error", "Unknown error")
+                        updated = True
+                except Exception as e:
+                    logger.error("check_video_status_error", error=str(e), video_id=vid)
+                
+                new_videos_dict[scene_idx] = v_data
+
+        if updated:
+            run.output_data["videos"] = new_videos_dict
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(run, "output_data")
+            await self.session.commit()
+
+        videos = {k: VideoStatus(**v) for k, v in new_videos_dict.items()}
+        return VideoResult(videos=videos, project_id=str(project_id))

@@ -151,19 +151,35 @@ async def generate_avatar_video(state: PipelineGraphState) -> dict:
     scenes = state.get("storyboard_scenes", [])
     avatar_id = state.get("selected_avatar_id", "Anna_public_3_20240108")
     voice_id = state.get("selected_voice_id", "1bd001e7e50f421d891986aad5158bc8") # HeyGen voice map
+    use_custom_voice = state.get("use_custom_voice", True)
+    voice_audio_paths = state.get("voice_audio_paths", {})
     
     video_ids = {}
     
     try:
+        import os
         for idx, scene in enumerate(scenes):
             script = scene.get("voice_text", "")
             if not script.strip():
                 continue
                 
+            audio_asset_id = None
+            if use_custom_voice:
+                audio_path = voice_audio_paths.get(str(idx))
+                if audio_path and os.path.exists(audio_path):
+                    with open(audio_path, "rb") as f:
+                        audio_bytes = f.read()
+                    filename = os.path.basename(audio_path)
+                    audio_asset_id = await provider.upload_audio_asset(audio_bytes, filename)
+                else:
+                    logger.warning("missing_audio_file_for_scene", scene_index=idx)
+                    # Fallback to text if missing
+
             result = await provider.create_avatar_video(
-                script=script,
+                script=script if not audio_asset_id else None,
                 avatar_id=avatar_id,
-                voice_id=voice_id,
+                voice_id=voice_id if not audio_asset_id else None,
+                audio_asset_id=audio_asset_id
             )
             
             video_ids[str(idx)] = result["video_id"]

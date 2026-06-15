@@ -134,6 +134,8 @@ class PipelineStatusResponse(BaseModel):
     content_result: ContentResult | None = None
     script_result: ScriptResult | None = None
     storyboard_result: StoryboardResult | None = None
+    voice_result: VoiceResult | None = None
+    video_result: VideoResult | None = None
     runs: list[PipelineRunResponse] = []
     total_cost_usd: float = 0.0
     total_tokens: int = 0
@@ -169,14 +171,31 @@ class SceneRegenerateRequest(BaseModel):
 
 # ── Voice (Step 5) ──────────────────────────────────────────
 
+class VoiceResult(BaseModel):
+    audio_paths: dict[str, str]  # Map of scene_index to audio file path
+    project_id: str
+    stage: str = "voice"
+
 class VoiceGenerateRequest(BaseModel):
     selected_voice_id: str
     storyboard_scenes: list[StoryboardScene]
     video_frame_size: str = "16:9"
     video_quality: str = "1080p"
 
-# ── Avatar (Step 6) ─────────────────────────────────────────
+# ── Avatar (Step 6) & Video (Step 7) ────────────────────────
+
+class VideoStatus(BaseModel):
+    video_id: str
+    status: str  # pending, processing, completed, failed
+    video_url: str | None = None
+    error_message: str | None = None
+
+class VideoResult(BaseModel):
+    videos: dict[str, VideoStatus]  # Map of scene_index to video status
+    project_id: str
+    stage: str = "video"
 
 class AvatarGenerateRequest(BaseModel):
     selected_avatar_id: str
+    use_custom_voice: bool = True
 

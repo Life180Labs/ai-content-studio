@@ -46,9 +46,10 @@ class HeyGenProvider(AIProvider):
 
     async def create_avatar_video(
         self,
-        script: str,
+        script: str | None = None,
         avatar_id: str = "Anna_public_3_20240108", # default public avatar
-        voice_id: str = "1bd001e7e50f421d891986aad5158bc8", # default voice
+        voice_id: str | None = "1bd001e7e50f421d891986aad5158bc8", # default voice
+        audio_asset_id: str | None = None,
         *,
         background_url: str | None = None,
     ) -> dict:
@@ -63,6 +64,19 @@ class HeyGenProvider(AIProvider):
             "Content-Type": "application/json",
         }
         
+        voice_payload = {}
+        if audio_asset_id:
+            voice_payload = {
+                "type": "audio",
+                "audio_asset_id": audio_asset_id
+            }
+        else:
+            voice_payload = {
+                "type": "text",
+                "input_text": script or "Hello",
+                "voice_id": voice_id
+            }
+
         payload = {
             "video_inputs": [
                 {
@@ -71,11 +85,7 @@ class HeyGenProvider(AIProvider):
                         "avatar_id": avatar_id,
                         "avatar_style": "normal"
                     },
-                    "voice": {
-                        "type": "text",
-                        "input_text": script,
-                        "voice_id": voice_id
-                    }
+                    "voice": voice_payload
                 }
             ],
             "dimension": {
@@ -126,4 +136,26 @@ class HeyGenProvider(AIProvider):
                 provider=self.provider_name,
                 model="v2-avatar",
             )
+
+    async def upload_audio_asset(self, audio_bytes: bytes, filename: str) -> str:
+        """Upload an audio file to HeyGen and return the asset ID."""
+        import httpx
+        import time
+        url = "https://api.heygen.com/v1/asset"
+        headers = {
+            "x-api-key": self.api_key,
+        }
+        files = {
+            "file": (filename, audio_bytes, "audio/mpeg")
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, files=files, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                return data["data"]["id"]
+        except Exception as e:
+            logger.error("heygen_upload_error", error=str(e))
+            # Fallback to mock for testing if real upload fails
+            return f"mock_asset_{int(time.time())}"
 

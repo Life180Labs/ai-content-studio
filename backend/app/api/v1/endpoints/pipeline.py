@@ -239,6 +239,7 @@ async def generate_avatar(
             user_id=user_id,
             project_id=pid,
             avatar_id=data.selected_avatar_id,
+            use_custom_voice=data.use_custom_voice,
         )
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -254,3 +255,18 @@ async def get_pipeline_status(
     pid = _parse_uuid(project_id, "project_id")
     service = PipelineService(session)
     return await service.get_status(pid)
+
+@router.get("/videos/status", response_model=VideoResult)
+async def check_video_status(
+    workspace_id: str,
+    project_id: str,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Poll HeyGen API for video progress."""
+    pid = _parse_uuid(project_id, "project_id")
+    service = PipelineService(session)
+    result = await service.check_video_status(user_id=user_id, project_id=pid)
+    if not result:
+        raise HTTPException(status_code=404, detail="No video generation found for this project.")
+    return result

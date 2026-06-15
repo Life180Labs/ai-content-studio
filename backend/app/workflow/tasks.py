@@ -69,6 +69,7 @@ async def _run_graph_async(
             voice_audio_paths=kwargs.get("voice_audio_paths", {}),
             selected_avatar_id=kwargs.get("selected_avatar_id"),
             avatar_video_ids=kwargs.get("avatar_video_ids", {}),
+            use_custom_voice=kwargs.get("use_custom_voice", True),
             current_node=node,
             error_message=None,
             retry_attempts={},
@@ -122,6 +123,33 @@ async def _run_graph_async(
                 )
                 run_session.add(run)
                 await run_session.commit()
+            elif node == "generate_voice" and not result.get("error_message"):
+                run = PipelineRun(
+                    project_id=uuid.UUID(project_id),
+                    stage="voice",
+                    input_data={"voice_id": kwargs.get("selected_voice_id")},
+                    output_data={"audio_paths": result.get("voice_audio_paths", {})},
+                    provider="langgraph",
+                    model="pipeline",
+                    status="success"
+                )
+                run_session.add(run)
+                await run_session.commit()
+            elif node == "generate_avatar_video" and not result.get("error_message"):
+                run = PipelineRun(
+                    project_id=uuid.UUID(project_id),
+                    stage="video",
+                    input_data={
+                        "avatar_id": kwargs.get("selected_avatar_id"),
+                        "use_custom_voice": kwargs.get("use_custom_voice", True)
+                    },
+                    output_data={"videos": result.get("avatar_video_ids", {})},
+                    provider="langgraph",
+                    model="pipeline",
+                    status="success"
+                )
+                run_session.add(run)
+                await run_session.commit()
 
         return {
             "current_node": result.get("current_node"),
@@ -157,7 +185,14 @@ def start_voice_generation(project_id: str, user_id: str, selected_voice_id: str
 
 
 @shared_task(name="app.workflow.tasks.start_avatar_generation")
-def start_avatar_generation(project_id: str, user_id: str, selected_avatar_id: str) -> dict:
+def start_avatar_generation(project_id: str, user_id: str, selected_avatar_id: str, use_custom_voice: bool = True) -> dict:
     """Celery task to resume workflow and generate avatars."""
     logger.info("celery_task_started", task="start_avatar", project_id=project_id)
-    return asyncio.run(_run_graph_async(project_id, user_id, script="", node="generate_avatar_video", selected_avatar_id=selected_avatar_id))
+    return asyncio.run(_run_graph_async(
+        project_id, 
+        user_id, 
+        script="", 
+        node="generate_avatar_video", 
+        selected_avatar_id=selected_avatar_id,
+        use_custom_voice=use_custom_voice
+    ))

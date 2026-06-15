@@ -47,12 +47,16 @@ class OpenAIProvider(AIProvider):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
-            response = await self.client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if response_format == "json":
+                kwargs["response_format"] = { "type": "json_object" }
+
+            response = await self.client.chat.completions.create(**kwargs)
 
             latency = self._end_timer(start)
 

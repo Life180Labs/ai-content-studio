@@ -66,11 +66,20 @@ Return ONLY valid JSON with this structure:
             task="storyboard",
             temperature=0.7,
             max_tokens=4096,
+            response_format="json"
         )
 
         text = response.content.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        
+        import re
+        match = re.search(r'```(?:json)?(.*?)```', text, re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+        else:
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end != -1:
+                text = text[start:end+1]
 
         data = json.loads(text)
         scenes = data.get("scenes", [])
@@ -84,8 +93,9 @@ Return ONLY valid JSON with this structure:
     except AIProviderError as e:
         logger.error("storyboard_generation_error", error=str(e))
         return {"error_message": str(e), "current_node": "generate_storyboard"}
-    except json.JSONDecodeError:
-        return {"error_message": "Failed to parse JSON from AI response.", "current_node": "generate_storyboard"}
+    except json.JSONDecodeError as e:
+        logger.error("json_decode_error", raw_text=text, error=str(e))
+        return {"error_message": f"Failed to parse JSON from AI response. Raw text snippet: {text[:200]}...", "current_node": "generate_storyboard"}
 
 
 async def generate_voice(state: PipelineGraphState) -> dict:

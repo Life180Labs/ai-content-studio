@@ -299,6 +299,12 @@ export default function ProjectDetailPage({
             initialVideoQuality={status?.storyboard_result?.video_quality || "1080p"}
             onProceed={() => setActiveTab("voice")}
             isGeneratingVoice={generateVoice.isPending}
+            runError={status?.runs?.find(r => r.stage === "storyboard" && r.status === "error")?.error_message}
+            onRetry={() => {
+              if (status?.script_result?.full_script) {
+                handleGenerateStoryboard(status.script_result.full_script);
+              }
+            }}
           />
         )}
 

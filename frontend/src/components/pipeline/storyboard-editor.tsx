@@ -20,6 +20,8 @@ interface StoryboardEditorProps {
   initialVideoQuality: string;
   onProceed: () => void;
   isGeneratingVoice: boolean;
+  runError?: string;
+  onRetry?: () => void;
 }
 
 export function StoryboardEditor({
@@ -30,6 +32,8 @@ export function StoryboardEditor({
   initialVideoQuality,
   onProceed,
   isGeneratingVoice,
+  runError,
+  onRetry,
 }: StoryboardEditorProps) {
   const [scenes, setScenes] = useState<StoryboardScene[]>(initialScenes);
   const [videoFrameSize, setVideoFrameSize] = useState(initialVideoFrameSize);
@@ -46,6 +50,24 @@ export function StoryboardEditor({
   const regenerateScene = useRegenerateScene(workspaceId, projectId);
 
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
+
+  if (runError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="bg-destructive/10 text-destructive p-4 rounded-full mb-4">
+          <Trash2 className="h-8 w-8" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">Generation Failed</h3>
+        <p className="text-muted-foreground max-w-md mb-6">{runError}</p>
+        {onRetry && (
+          <Button onClick={onRetry} className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Try Again
+          </Button>
+        )}
+      </div>
+    );
+  }
 
   if (!scenes || scenes.length === 0) {
     return (

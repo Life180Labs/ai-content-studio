@@ -46,6 +46,8 @@ class GeminiProvider(AIProvider):
                 temperature=temperature,
                 max_output_tokens=max_tokens,
             )
+            if response_format == "json":
+                config.response_mime_type = "application/json"
             if system_prompt:
                 config.system_instruction = system_prompt
 

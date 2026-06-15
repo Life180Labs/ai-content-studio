@@ -29,6 +29,9 @@ from app.schemas.pipeline import (
     ScriptSection,
     StoryboardResult,
     StoryboardScene,
+    VoiceResult,
+    VideoResult,
+    VideoStatus,
 )
 from app.services.ai_preference import AIPreferenceService
 
@@ -584,7 +587,8 @@ Return ONLY valid JSON."""
 
         return PipelineStatusResponse(
             project_id=str(project_id),
-            stage=stage_name,
+            current_stage=project.current_stage,
+            stage_name=stage_name,
             content_result=content_result,
             script_result=script_result,
             storyboard_result=storyboard_result,

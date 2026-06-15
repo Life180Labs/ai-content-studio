@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 export interface Workspace {
@@ -39,5 +39,17 @@ export function useProjects(workspaceId: string | null) {
     queryKey: ["projects", workspaceId],
     queryFn: () => api.get(`/api/v1/workspaces/${workspaceId}/projects`),
     enabled: !!workspaceId,
+  });
+}
+
+export function useDeleteProject(workspaceId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => 
+      api.delete(`/api/v1/workspaces/${workspaceId}/projects/${projectId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats", workspaceId] });
+    },
   });
 }

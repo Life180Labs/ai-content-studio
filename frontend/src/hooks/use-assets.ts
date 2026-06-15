@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api from "@/lib/api";
+import { api } from "@/lib/api";
 import { Voice } from "./use-pipeline";
 
 export type Avatar = {

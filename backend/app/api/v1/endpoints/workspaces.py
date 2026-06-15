@@ -11,7 +11,9 @@ from app.api.deps import get_current_user_id
 from app.db.session import get_db
 from app.schemas.auth import MessageResponse
 from app.schemas.workspace import WorkspaceCreate, WorkspaceResponse, WorkspaceUpdate
+from app.schemas.dashboard import DashboardStatsResponse
 from app.services.workspace import WorkspaceService
+from app.services.dashboard import DashboardService
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
 
@@ -70,3 +72,18 @@ async def delete_workspace(
     service = WorkspaceService(session)
     await service.delete_workspace(workspace_id, user_id)
     return MessageResponse(message="Workspace deleted")
+
+@router.get("/{workspace_id}/dashboard-stats", response_model=DashboardStatsResponse)
+async def get_dashboard_stats(
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Get aggregated dashboard metrics for a workspace. Requires membership."""
+    # First verify membership
+    ws_service = WorkspaceService(session)
+    await ws_service.get_workspace(workspace_id, user_id)
+    
+    # Then get stats
+    dash_service = DashboardService(session)
+    return await dash_service.get_workspace_stats(workspace_id)

@@ -13,16 +13,26 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, FolderKanban, ArrowRight, Loader2 } from "lucide-react";
+import { Plus, FolderKanban, ArrowRight, Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
-import { useProjects, useWorkspaces } from "@/hooks/use-projects";
+import { useProjects, useWorkspaces, useDeleteProject } from "@/hooks/use-projects";
 import Link from "next/link";
 
 const STAGE_NAMES = ["Canvas", "Content", "Script", "Storyboard", "Voice", "Avatar", "Video"];
@@ -31,12 +41,32 @@ export default function ProjectsPage() {
   const [open, setOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const router = useRouter();
 
   const { data: workspaces } = useWorkspaces();
   const workspaceId = workspaces?.[0]?.id || null;
   const { data: projectsData, isLoading: isProjectsLoading } = useProjects(workspaceId);
   const projects = projectsData?.data || [];
+  const deleteProject = useDeleteProject(workspaceId);
+
+  const confirmDelete = async () => {
+    if (!projectToDelete) return;
+    try {
+      await deleteProject.mutateAsync(projectToDelete);
+      toast.success("Project deleted");
+    } catch (err: any) {
+      toast.error("Failed to delete project");
+    } finally {
+      setProjectToDelete(null);
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setProjectToDelete(id);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,6 +166,31 @@ export default function ProjectsPage() {
         </Dialog>
       </div>
 
+      <AlertDialog open={!!projectToDelete} onOpenChange={(open) => !open && setProjectToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this project? This action cannot be undone and will remove all associated pipeline runs and assets.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteProject.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              className="bg-destructive hover:bg-destructive/90"
+              disabled={deleteProject.isPending}
+            >
+              {deleteProject.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete Project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {isProjectsLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
@@ -169,8 +224,17 @@ export default function ProjectsPage() {
           {projects.map((project) => (
             <Link key={project.id} href={`/projects/${project.id}`}>
               <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
-                <CardHeader>
-                  <CardTitle className="text-lg">{project.name}</CardTitle>
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+                  <CardTitle className="text-lg leading-tight mt-1 truncate">{project.name}</CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0 relative z-10"
+                    onClick={(e) => handleDeleteClick(e, project.id)}
+                    disabled={deleteProject.isPending && projectToDelete === project.id}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-col gap-4">

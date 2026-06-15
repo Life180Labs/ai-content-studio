@@ -26,6 +26,7 @@ from app.schemas.pipeline import (
     StoryboardScene,
     VoiceGenerateRequest,
     AvatarGenerateRequest,
+    VideoResult,
 )
 from app.services.pipeline import PipelineService
 

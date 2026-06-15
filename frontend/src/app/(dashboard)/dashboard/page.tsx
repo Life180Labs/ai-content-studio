@@ -13,65 +13,63 @@ import {
   TrendingUp,
   CheckCircle2,
   Plus,
-  ArrowUpRight,
   Clock,
   Sparkles,
+  Loader2,
+  PlayCircle
 } from "lucide-react";
 import Link from "next/link";
-
-const metrics = [
-  {
-    title: "Projects",
-    value: "0",
-    change: "Start your first project",
-    icon: FolderKanban,
-    color: "text-blue-500",
-    bgColor: "bg-blue-500/10",
-  },
-  {
-    title: "Generated Assets",
-    value: "0",
-    change: "Videos, scripts, voice-overs",
-    icon: Video,
-    color: "text-emerald-500",
-    bgColor: "bg-emerald-500/10",
-  },
-  {
-    title: "AI Cost",
-    value: "$0.00",
-    change: "This month",
-    icon: DollarSign,
-    color: "text-amber-500",
-    bgColor: "bg-amber-500/10",
-  },
-  {
-    title: "Token Usage",
-    value: "0",
-    change: "Tokens consumed",
-    icon: Zap,
-    color: "text-purple-500",
-    bgColor: "bg-purple-500/10",
-  },
-  {
-    title: "Completion Rate",
-    value: "—",
-    change: "Pipeline success",
-    icon: TrendingUp,
-    color: "text-cyan-500",
-    bgColor: "bg-cyan-500/10",
-  },
-  {
-    title: "Success Rate",
-    value: "—",
-    change: "AI generation accuracy",
-    icon: CheckCircle2,
-    color: "text-green-500",
-    bgColor: "bg-green-500/10",
-  },
-];
+import { useDashboardStats } from "@/hooks/use-dashboard";
 
 export default function DashboardPage() {
-  const { user } = useAuthStore();
+  const { user, currentWorkspace } = useAuthStore();
+  const workspaceId = currentWorkspace?.id || null;
+  const { data: stats, isLoading } = useDashboardStats(workspaceId);
+
+  const metrics = [
+    {
+      title: "Projects",
+      value: stats?.total_projects.toString() || "0",
+      change: "Active workspace projects",
+      icon: FolderKanban,
+      color: "text-blue-500",
+      bgColor: "bg-blue-500/10",
+    },
+    {
+      title: "Generated Assets",
+      value: stats?.generated_assets.toString() || "0",
+      change: "Videos & voice-overs",
+      icon: Video,
+      color: "text-emerald-500",
+      bgColor: "bg-emerald-500/10",
+    },
+    {
+      title: "AI Cost",
+      value: `$${(stats?.total_cost_usd || 0).toFixed(2)}`,
+      change: "Total workspace spend",
+      icon: DollarSign,
+      color: "text-amber-500",
+      bgColor: "bg-amber-500/10",
+    },
+    {
+      title: "Token Usage",
+      value: stats?.total_tokens > 1000 
+        ? `${(stats.total_tokens / 1000).toFixed(1)}k` 
+        : (stats?.total_tokens.toString() || "0"),
+      change: "Tokens consumed",
+      icon: Zap,
+      color: "text-purple-500",
+      bgColor: "bg-purple-500/10",
+    },
+    {
+      title: "Success Rate",
+      value: `${(stats?.success_rate || 0).toFixed(1)}%`,
+      change: "Pipeline success",
+      icon: CheckCircle2,
+      color: "text-green-500",
+      bgColor: "bg-green-500/10",
+    },
+  ];
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
@@ -134,22 +132,57 @@ export default function DashboardPage() {
             </Badge>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                <FolderKanban className="h-8 w-8 text-muted-foreground" />
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
-              <h3 className="font-semibold text-lg">No activity yet</h3>
-              <p className="text-muted-foreground text-sm mt-1 max-w-xs">
-                Create your first project to see pipeline activity, job status,
-                and approval workflows here.
-              </p>
-              <Link href="/projects">
-                <Button variant="outline" className="mt-6 gap-2">
-                  <Plus className="h-4 w-4" />
-                  Start a Project
-                </Button>
-              </Link>
-            </div>
+            ) : stats?.recent_projects && stats.recent_projects.length > 0 ? (
+              <div className="space-y-4 mt-2">
+                {stats.recent_projects.map(project => (
+                  <div key={project.id} className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                        <FolderKanban className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-sm">{project.title}</h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant={project.status === 'completed' ? 'default' : 'secondary'} className="text-[10px] px-1.5 h-4">
+                            {project.status}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(project.updated_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Link href={`/projects/${project.id}`}>
+                      <Button variant="ghost" size="sm" className="gap-2">
+                        <PlayCircle className="h-4 w-4" />
+                        <span className="hidden sm:inline">Open</span>
+                      </Button>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+                  <FolderKanban className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="font-semibold text-lg">No activity yet</h3>
+                <p className="text-muted-foreground text-sm mt-1 max-w-xs">
+                  Create your first project to see pipeline activity, job status,
+                  and approval workflows here.
+                </p>
+                <Link href="/projects">
+                  <Button variant="outline" className="mt-6 gap-2">
+                    <Plus className="h-4 w-4" />
+                    Start a Project
+                  </Button>
+                </Link>
+              </div>
+            )}
           </CardContent>
         </Card>
 

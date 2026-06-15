@@ -7,18 +7,30 @@ Validated at startup; the app will refuse to boot with missing/invalid config.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def get_env_file_path() -> str:
+    """Traverse up directory tree to locate the .env file."""
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        env_path = parent / ".env"
+        if env_path.is_file():
+            return str(env_path)
+    return ".env"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=get_env_file_path(),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -28,7 +40,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
     DEBUG: bool = False
     SECRET_KEY: str = "change-me-to-a-random-64-char-string"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: str | list[str] = ["http://localhost:3000"]
     APP_NAME: str = "AI Content Studio"
     API_V1_PREFIX: str = "/api/v1"
 

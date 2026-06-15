@@ -159,3 +159,34 @@ class HeyGenProvider(AIProvider):
             # Fallback to mock for testing if real upload fails
             return f"mock_asset_{int(time.time())}"
 
+    async def get_avatars(self) -> list[dict]:
+        """Fetch all available avatars (public and custom)."""
+        import httpx
+        url = "https://api.heygen.com/v2/avatars"
+        headers = {
+            "x-api-key": self.api_key,
+            "Accept": "application/json"
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
+                
+                # HeyGen v2 returns data.avatars list
+                avatars = data.get("data", {}).get("avatars", [])
+                
+                result = []
+                for avatar in avatars:
+                    result.append({
+                        "id": avatar.get("avatar_id"),
+                        "name": avatar.get("avatar_name"),
+                        "gender": avatar.get("gender", "Unknown"),
+                        "preview_image_url": avatar.get("preview_image_url"),
+                        "type": "custom" if avatar.get("is_custom") else "public",
+                    })
+                return result
+        except Exception as e:
+            logger.error("heygen_get_avatars_error", error=str(e))
+            raise AIProviderError(f"HeyGen API Error: {str(e)}", provider=self.provider_name, model="") from e
+

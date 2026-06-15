@@ -10,6 +10,7 @@ from app.models.project import Project, ProjectStatus
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
+from app.models.brand_kit import BrandKit
 
 __all__ = [
     "BaseModel",
@@ -23,5 +24,6 @@ __all__ = [
     "AuditLog",
     "AIPreference",
     "PipelineRun",
+    "BrandKit",
 ]
 

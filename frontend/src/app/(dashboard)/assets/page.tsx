@@ -7,9 +7,11 @@ import { AvatarGrid } from "@/components/assets/avatar-grid";
 import { BrandKitsManager } from "@/components/assets/brand-kits-manager";
 import { Image, Mic, Palette } from "lucide-react";
 
+import { useWorkspaces } from "@/hooks/use-projects";
+
 export default function AssetsPage() {
-  const { currentWorkspace } = useAuthStore();
-  const workspaceId = currentWorkspace?.id || null;
+  const { data: workspaces } = useWorkspaces();
+  const workspaceId = workspaces?.[0]?.id || null;
 
   return (
     <div className="flex-1 overflow-auto bg-background/50">

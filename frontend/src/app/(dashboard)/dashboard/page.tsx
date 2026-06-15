@@ -20,10 +20,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useDashboardStats } from "@/hooks/use-dashboard";
+import { useWorkspaces } from "@/hooks/use-projects";
 
 export default function DashboardPage() {
-  const { user, currentWorkspace } = useAuthStore();
-  const workspaceId = currentWorkspace?.id || null;
+  const { user } = useAuthStore();
+  const { data: workspaces } = useWorkspaces();
+  const workspaceId = workspaces?.[0]?.id || null;
   const { data: stats, isLoading } = useDashboardStats(workspaceId);
 
   const metrics = [
@@ -53,9 +55,9 @@ export default function DashboardPage() {
     },
     {
       title: "Token Usage",
-      value: stats?.total_tokens > 1000 
-        ? `${(stats.total_tokens / 1000).toFixed(1)}k` 
-        : (stats?.total_tokens.toString() || "0"),
+      value: (stats?.total_tokens || 0) > 1000 
+        ? `${((stats?.total_tokens || 0) / 1000).toFixed(1)}k` 
+        : ((stats?.total_tokens || 0).toString()),
       change: "Tokens consumed",
       icon: Zap,
       color: "text-purple-500",

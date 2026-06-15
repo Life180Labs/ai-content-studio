@@ -1,5 +1,5 @@
 "use client";
-
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,9 @@ export function VoiceSelector({ workspaceId, projectId, onProceed, isGeneratingA
     // Stop any existing speech
     window.speechSynthesis.cancel();
     
+    const voiceDef = voices?.find(v => v.id === id);
+    if (!voiceDef) return;
+    
     if (voiceDef?.preview_url) {
       const audio = new Audio(voiceDef.preview_url);
       audio.onplay = () => setPlayingId(id);
@@ -103,12 +106,12 @@ export function VoiceSelector({ workspaceId, projectId, onProceed, isGeneratingA
         </div>
         
         <Dialog open={isCloneOpen} onOpenChange={setIsCloneOpen}>
-          <DialogTrigger asChild>
+          <DialogTrigger render={
             <Button variant="outline" className="gap-2">
               <Mic className="h-4 w-4" />
               Clone New Voice
             </Button>
-          </DialogTrigger>
+          } />
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Clone Your Voice</DialogTitle>

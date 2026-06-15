@@ -119,33 +119,55 @@ class ApiClient {
     return res.json();
   }
 
-  get<T>(path: string) {
-    return this.request<T>(path, { method: "GET" });
+  get<T>(path: string, options?: RequestInit) {
+    return this.request<T>(path, { ...options, method: "GET" });
   }
 
-  post<T>(path: string, body?: unknown) {
-    return this.request<T>(path, {
+  post<T>(path: string, body?: unknown, options?: RequestInit) {
+    const isFormData = body instanceof FormData;
+    const reqOptions: RequestInit = {
+      ...options,
       method: "POST",
-      body: body ? JSON.stringify(body) : undefined,
-    });
+      body: isFormData ? (body as FormData) : (body ? JSON.stringify(body) : undefined),
+    };
+    if (isFormData) {
+      reqOptions.headers = { ...options?.headers };
+      // Let the browser set Content-Type for FormData (includes boundary)
+      delete (reqOptions.headers as any)["Content-Type"];
+    }
+    return this.request<T>(path, reqOptions);
   }
 
-  patch<T>(path: string, body?: unknown) {
-    return this.request<T>(path, {
+  patch<T>(path: string, body?: unknown, options?: RequestInit) {
+    const isFormData = body instanceof FormData;
+    const reqOptions: RequestInit = {
+      ...options,
       method: "PATCH",
-      body: body ? JSON.stringify(body) : undefined,
-    });
+      body: isFormData ? (body as FormData) : (body ? JSON.stringify(body) : undefined),
+    };
+    if (isFormData) {
+      reqOptions.headers = { ...options?.headers };
+      delete (reqOptions.headers as any)["Content-Type"];
+    }
+    return this.request<T>(path, reqOptions);
   }
 
-  put<T>(path: string, body?: unknown) {
-    return this.request<T>(path, {
+  put<T>(path: string, body?: unknown, options?: RequestInit) {
+    const isFormData = body instanceof FormData;
+    const reqOptions: RequestInit = {
+      ...options,
       method: "PUT",
-      body: body ? JSON.stringify(body) : undefined,
-    });
+      body: isFormData ? (body as FormData) : (body ? JSON.stringify(body) : undefined),
+    };
+    if (isFormData) {
+      reqOptions.headers = { ...options?.headers };
+      delete (reqOptions.headers as any)["Content-Type"];
+    }
+    return this.request<T>(path, reqOptions);
   }
 
-  delete<T>(path: string) {
-    return this.request<T>(path, { method: "DELETE" });
+  delete<T>(path: string, options?: RequestInit) {
+    return this.request<T>(path, { ...options, method: "DELETE" });
   }
 }
 

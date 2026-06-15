@@ -135,7 +135,7 @@ export function StoryboardEditor({
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground whitespace-nowrap">Format:</span>
-            <Select value={videoFrameSize} onValueChange={setVideoFrameSize}>
+            <Select value={videoFrameSize} onValueChange={(v) => v && setVideoFrameSize(v)}>
               <SelectTrigger className="w-[120px]">
                 <SelectValue placeholder="Format" />
               </SelectTrigger>
@@ -148,7 +148,7 @@ export function StoryboardEditor({
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground whitespace-nowrap">Quality:</span>
-            <Select value={videoQuality} onValueChange={setVideoQuality}>
+            <Select value={videoQuality} onValueChange={(v) => v && setVideoQuality(v)}>
               <SelectTrigger className="w-[110px]">
                 <SelectValue placeholder="Quality" />
               </SelectTrigger>

@@ -80,7 +80,9 @@ export interface PipelineRun {
 
 export type PipelineStatusResponse = {
   project_id: string;
-  stage: string;
+  current_stage: number;
+  stage_name: string;
+  canvas_data?: any;
   content_result?: ContentResult;
   script_result?: ScriptResult;
   storyboard_result?: StoryboardResult;
@@ -242,8 +244,7 @@ export function usePollVideoStatus(workspaceId: string | null, projectId: string
   return useQuery({
     queryKey: ["video-status", projectId],
     queryFn: async () => {
-      const res = await api.get(`${pipelineUrl(workspaceId, projectId)}/videos/status`);
-      return res.data;
+      return api.get<any>(`${pipelineUrl(workspaceId, projectId)}/videos/status`);
     },
     enabled: !!workspaceId && !!projectId && enabled,
     refetchInterval: 5000, // Poll every 5 seconds
@@ -255,8 +256,7 @@ export function useGetVoices(workspaceId: string | null, projectId: string) {
   return useQuery<Voice[]>({
     queryKey: ["voices", projectId],
     queryFn: async () => {
-      const res = await api.get(`${pipelineUrl(workspaceId, projectId)}/voices`);
-      return res.data;
+      return api.get<Voice[]>(`${pipelineUrl(workspaceId, projectId)}/voices`);
     },
     enabled: !!workspaceId && !!projectId,
   });
@@ -266,12 +266,11 @@ export function useCloneVoice(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
   return useMutation<{ id: string; name: string }, unknown, FormData>({
     mutationFn: async (formData) => {
-      const res = await api.post(`${pipelineUrl(workspaceId, projectId)}/voices/clone`, formData, {
+      return api.post<{ id: string; name: string }>(`${pipelineUrl(workspaceId, projectId)}/voices/clone`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
       });
-      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["voices", projectId] });

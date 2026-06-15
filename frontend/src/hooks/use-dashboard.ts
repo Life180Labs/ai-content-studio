@@ -22,8 +22,7 @@ export function useDashboardStats(workspaceId: string | null) {
   return useQuery<DashboardStats>({
     queryKey: ["dashboard-stats", workspaceId],
     queryFn: async () => {
-      const res = await api.get(`/workspaces/${workspaceId}/dashboard-stats`);
-      return res.data;
+      return api.get<DashboardStats>(`/workspaces/${workspaceId}/dashboard-stats`);
     },
     enabled: !!workspaceId,
   });

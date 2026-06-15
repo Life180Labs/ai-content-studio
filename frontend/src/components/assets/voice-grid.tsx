@@ -41,10 +41,9 @@ export function VoiceGrid({ workspaceId }: VoiceGridProps) {
   // Create a mutation for workspace cloning (reuses the new route)
   const cloneVoice = useMutation<{ id: string; name: string }, unknown, FormData>({
     mutationFn: async (formData) => {
-      const res = await api.post(`/workspaces/${workspaceId}/assets/voices/clone`, formData, {
+      return api.post<{ id: string; name: string }>(`/workspaces/${workspaceId}/assets/voices/clone`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspace-voices", workspaceId] });
@@ -108,12 +107,12 @@ export function VoiceGrid({ workspaceId }: VoiceGridProps) {
     <div className="space-y-6">
       <div className="flex justify-end">
         <Dialog open={isCloneOpen} onOpenChange={setIsCloneOpen}>
-          <DialogTrigger asChild>
+          <DialogTrigger render={
             <Button className="gap-2">
               <Mic className="h-4 w-4" />
               Clone Voice
             </Button>
-          </DialogTrigger>
+          } />
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Clone Your Voice</DialogTitle>

@@ -29,8 +29,7 @@ export function useWorkspaceVoices(workspaceId: string | null) {
   return useQuery<Voice[]>({
     queryKey: ["workspace-voices", workspaceId],
     queryFn: async () => {
-      const res = await api.get(`/workspaces/${workspaceId}/assets/voices`);
-      return res.data;
+      return api.get<Voice[]>(`/workspaces/${workspaceId}/assets/voices`);
     },
     enabled: !!workspaceId,
   });
@@ -40,8 +39,7 @@ export function useWorkspaceAvatars(workspaceId: string | null) {
   return useQuery<Avatar[]>({
     queryKey: ["workspace-avatars", workspaceId],
     queryFn: async () => {
-      const res = await api.get(`/workspaces/${workspaceId}/assets/avatars`);
-      return res.data;
+      return api.get<Avatar[]>(`/workspaces/${workspaceId}/assets/avatars`);
     },
     enabled: !!workspaceId,
   });
@@ -51,8 +49,7 @@ export function useBrandKits(workspaceId: string | null) {
   return useQuery<BrandKit[]>({
     queryKey: ["brand-kits", workspaceId],
     queryFn: async () => {
-      const res = await api.get(`/workspaces/${workspaceId}/assets/brand-kits`);
-      return res.data;
+      return api.get<BrandKit[]>(`/workspaces/${workspaceId}/assets/brand-kits`);
     },
     enabled: !!workspaceId,
   });
@@ -62,8 +59,7 @@ export function useCreateBrandKit(workspaceId: string | null) {
   const queryClient = useQueryClient();
   return useMutation<BrandKit, unknown, BrandKitCreatePayload>({
     mutationFn: async (data) => {
-      const res = await api.post(`/workspaces/${workspaceId}/assets/brand-kits`, data);
-      return res.data;
+      return api.post<BrandKit>(`/workspaces/${workspaceId}/assets/brand-kits`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["brand-kits", workspaceId] });

@@ -32,14 +32,12 @@ export function PipelineTabs({
         {STAGES.map((stage) => {
           const isActive = activeTab === stage.key;
           const isCompleted = stage.index < currentStage;
-          const isAccessible = stage.index <= currentStage && !stage.locked;
-          const isFutureLocked = stage.locked;
-
+          const isAccessible = stage.index <= currentStage;
           return (
             <button
               key={stage.key}
               onClick={() => isAccessible && onTabChange(stage.key)}
-              disabled={!isAccessible || isFutureLocked}
+              disabled={!isAccessible}
               className={cn(
                 "relative flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-all whitespace-nowrap",
                 "border-b-2 -mb-px",
@@ -48,7 +46,7 @@ export function PipelineTabs({
                   : isCompleted
                   ? "border-transparent text-foreground/80 hover:text-foreground hover:border-border"
                   : "border-transparent text-muted-foreground",
-                (!isAccessible || isFutureLocked) && "opacity-40 cursor-not-allowed"
+                (!isAccessible) && "opacity-40 cursor-not-allowed"
               )}
             >
               {/* Step indicator */}
@@ -66,16 +64,11 @@ export function PipelineTabs({
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : isCompleted ? (
                   <Check className="h-3.5 w-3.5" />
-                ) : isFutureLocked ? (
-                  <Lock className="h-3 w-3" />
                 ) : (
                   stage.index + 1
                 )}
               </span>
               {stage.label}
-              {isFutureLocked && (
-                <span className="text-[10px] text-muted-foreground/60">Soon</span>
-              )}
             </button>
           );
         })}

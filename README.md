@@ -11,7 +11,7 @@
 | Auth | JWT (access + refresh), bcrypt | Token rotation, rate limiting |
 | Database | PostgreSQL 16 | Primary data store with Alembic migrations |
 | Cache | Redis 7 | Token blacklisting, rate limiting, sessions |
-| AI Layer | LangGraph, AI Gateway | Multi-provider routing (future phases) |
+| AI Layer | AI Gateway, LangGraph | Multi-provider routing (Gemini, OpenAI, Anthropic, HeyGen), Fallback logic, Cost tracking |
 
 ## Quick Start
 
@@ -62,23 +62,26 @@ App available at: `http://localhost:3000`
 ```
 ai-content-studio/
 ├── frontend/         # Next.js 16 + React 19
-│   ├── src/app/      # App Router pages
-│   ├── src/components/  # UI components (ShadCN)
+│   ├── src/app/      # App Router pages (Dashboard, Settings, Pipeline UI)
+│   ├── src/components/  # UI components (ShadCN, Canvas, Content Viewer, Script Editor)
 │   ├── src/lib/      # API client, utilities
 │   └── src/stores/   # Zustand state management
 ├── backend/          # FastAPI
 │   ├── app/api/      # REST endpoints (v1)
 │   ├── app/core/     # Config, security, logging
-│   ├── app/models/   # SQLAlchemy models
+│   ├── app/gateway/  # AI Gateway (Multi-provider routing, Fallback, Cost tracking)
+│   ├── app/models/   # SQLAlchemy models (Users, Projects, AI Preferences, Pipeline Runs)
 │   ├── app/schemas/  # Pydantic schemas
 │   ├── app/repositories/  # Data access layer
-│   ├── app/services/ # Business logic
+│   ├── app/services/ # Business logic (Auth, Pipeline orchestration, AI Preferences)
 │   └── app/db/       # Session factory + Alembic
 ├── docker-compose.yml
 └── .env.example
 ```
 
-## API Endpoints (Phase 1)
+## API Endpoints
+
+### Phase 1: Foundation
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -92,6 +95,19 @@ ai-content-studio/
 | `POST` | `/api/v1/workspaces/{id}/projects` | Create project |
 | `GET` | `/api/v1/workspaces/{id}/projects` | List projects |
 | `GET` | `/api/v1/health` | Health check |
+
+### Phase 2: AI Gateway & Pipeline
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/ai/preferences` | Get user AI routing preferences |
+| `PUT` | `/api/v1/ai/preferences` | Create/Update AI preferences |
+| `GET` | `/api/v1/ai/providers` | List available AI providers and models |
+| `POST` | `.../pipeline/suggest-key-points`| AI suggestion for topic key points |
+| `POST` | `.../pipeline/content` | Generate 2 content variations |
+| `POST` | `.../pipeline/script` | Generate structured video script |
+| `POST` | `.../pipeline/regenerate` | Regenerate specific pipeline stage |
+| `GET` | `.../pipeline/status` | Get current project pipeline state |
 
 ## Environment Variables
 

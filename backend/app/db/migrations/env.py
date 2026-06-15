@@ -11,10 +11,15 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Import all models so Alembic can detect them
 from app.models import BaseModel
+from app.core.config import get_settings
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Dynamically load the database URL from settings (.env)
+settings = get_settings()
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 target_metadata = BaseModel.metadata
 

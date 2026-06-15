@@ -1,0 +1,556 @@
+"""
+Pipeline Service — Content generation pipeline (Steps 1-3).
+
+Orchestrates AI calls for Canvas → Content → Script stages.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+
+import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.gateway.base import AIProviderError
+from app.gateway.router import AIGateway
+from app.models.pipeline_run import PipelineRun
+from app.models.project import Project
+from app.repositories.ai_preference import AIPreferenceRepository
+from app.schemas.pipeline import (
+    CanvasInput,
+    ContentResult,
+    ContentVariation,
+    KeyPointSuggestResponse,
+    PipelineRunResponse,
+    PipelineStatusResponse,
+    ScriptResult,
+    ScriptSection,
+)
+from app.services.ai_preference import AIPreferenceService
+
+logger = structlog.get_logger("pipeline")
+
+# ── Stage mapping ───────────────────────────────────────────
+
+STAGE_MAP = {
+    "canvas": 0,
+    "content": 1,
+    "script": 2,
+    "storyboard": 3,
+    "voice": 4,
+    "avatar": 5,
+    "video": 6,
+}
+
+
+class PipelineService:
+    """Orchestrates the content generation pipeline."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def _get_gateway(self, user_id: uuid.UUID) -> AIGateway:
+        """Build an AIGateway configured with the user's preferences."""
+        pref_repo = AIPreferenceRepository(self.session)
+        pref_service = AIPreferenceService(self.session)
+        pref = await pref_repo.get_by_user_id(user_id)
+
+        if not pref:
+            raise AIProviderError(
+                "No AI provider configured. Go to Settings → AI Provider Keys to add your API keys.",
+                provider="",
+            )
+
+        keys = pref_service.get_decrypted_keys(pref)
+        if not keys:
+            raise AIProviderError(
+                "No API keys found. Go to Settings → AI Provider Keys to add your API keys.",
+                provider="",
+            )
+
+        return AIGateway(
+            provider_keys=keys,
+            default_provider=pref.default_provider,
+            default_model=pref.default_model,
+            fallback_enabled=pref.fallback_enabled,
+            fallback_action=pref.fallback_action,
+            fallback_provider=pref.fallback_provider,
+            fallback_model=pref.fallback_model,
+            retry_count=pref.retry_count,
+            task_overrides=pref.task_overrides or {},
+            custom_models=pref.custom_models or {},
+        )
+
+    async def _get_project(self, project_id: uuid.UUID) -> Project:
+        """Fetch a project by ID."""
+        stmt = select(Project).where(
+            Project.id == project_id, Project.deleted_at.is_(None)
+        )
+        result = await self.session.execute(stmt)
+        project = result.scalar_one_or_none()
+        if not project:
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Project not found")
+        return project
+
+    async def _save_run(
+        self,
+        project_id: uuid.UUID,
+        stage: str,
+        input_data: dict,
+        output_data: dict,
+        response,
+        status: str = "success",
+        error_message: str | None = None,
+    ) -> PipelineRun:
+        """Persist a pipeline run record."""
+        run = PipelineRun(
+            project_id=project_id,
+            stage=stage,
+            input_data=input_data,
+            output_data=output_data,
+            provider=getattr(response, "provider", ""),
+            model=getattr(response, "model", ""),
+            input_tokens=getattr(response, "input_tokens", 0),
+            output_tokens=getattr(response, "output_tokens", 0),
+            cost_usd=getattr(response, "cost_usd", 0.0),
+            latency_ms=getattr(response, "latency_ms", 0.0),
+            status=status,
+            error_message=error_message,
+        )
+        self.session.add(run)
+        await self.session.flush()
+        return run
+
+    # ── Key Point Suggestion ────────────────────────────────
+
+    async def suggest_key_points(
+        self,
+        user_id: uuid.UUID,
+        topic: str,
+        target_audience: str = "",
+        count: int = 5,
+    ) -> KeyPointSuggestResponse:
+        """Use AI to suggest key points for a topic."""
+        gateway = await self._get_gateway(user_id)
+
+        prompt = f"""Generate exactly {count} compelling key points for a video about:
+
+Topic: {topic}
+{f"Target Audience: {target_audience}" if target_audience else ""}
+
+Return ONLY a JSON array of strings, no other text. Example:
+["Key point 1", "Key point 2", "Key point 3"]"""
+
+        response = await gateway.generate(
+            prompt,
+            system_prompt="You are a content strategist. Return ONLY valid JSON.",
+            task="content",
+            temperature=0.8,
+            max_tokens=1024,
+        )
+
+        try:
+            # Parse the JSON array from the response
+            text = response.content.strip()
+            # Handle markdown code blocks
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            points = json.loads(text)
+            if not isinstance(points, list):
+                points = [str(points)]
+        except (json.JSONDecodeError, IndexError):
+            # Fallback: split by newlines
+            points = [
+                line.strip().lstrip("0123456789.-) ")
+                for line in response.content.strip().split("\n")
+                if line.strip() and not line.strip().startswith("[")
+            ][:count]
+
+        return KeyPointSuggestResponse(key_points=points[:count])
+
+    # ── Content Generation (Step 2) ─────────────────────────
+
+    async def generate_content(
+        self,
+        user_id: uuid.UUID,
+        project_id: uuid.UUID,
+        canvas: CanvasInput,
+    ) -> ContentResult:
+        """Generate 2 content variations from canvas data."""
+        project = await self._get_project(project_id)
+        gateway = await self._get_gateway(user_id)
+
+        # Save canvas data to project
+        project.canvas_data = canvas.model_dump()
+        project.current_stage = STAGE_MAP["content"]
+        await self.session.flush()
+
+        system_prompt = """You are an expert content creator. Generate high-quality, engaging content for video production.
+Your content should be well-structured, compelling, and tailored to the specified audience and platform."""
+
+        prompt = self._build_content_prompt(canvas)
+
+        variations: list[ContentVariation] = []
+
+        for i in range(2):
+            try:
+                response = await gateway.generate(
+                    prompt + f"\n\nGenerate VARIATION {i + 1} — make it distinctly different from other variations.",
+                    system_prompt=system_prompt,
+                    task="content",
+                    temperature=0.8 + (i * 0.1),  # Slightly different temp for variety
+                    max_tokens=4096,
+                )
+
+                content_text = response.content
+                word_count = len(content_text.split())
+
+                # Generate quality score
+                score = await self._score_content(gateway, content_text, canvas)
+
+                variations.append(
+                    ContentVariation(
+                        content=content_text,
+                        quality_score=score,
+                        word_count=word_count,
+                        tone_analysis=canvas.tone,
+                    )
+                )
+
+                # Save run
+                await self._save_run(
+                    project_id=project_id,
+                    stage="content",
+                    input_data=canvas.model_dump(),
+                    output_data={
+                        "variation_index": i,
+                        "content": content_text,
+                        "quality_score": score,
+                        "word_count": word_count,
+                    },
+                    response=response,
+                )
+
+            except AIProviderError as e:
+                await self._save_run(
+                    project_id=project_id,
+                    stage="content",
+                    input_data=canvas.model_dump(),
+                    output_data={},
+                    response=e,
+                    status="error",
+                    error_message=str(e),
+                )
+                raise
+
+        logger.info(
+            "content_generated",
+            project_id=str(project_id),
+            variations=len(variations),
+        )
+
+        return ContentResult(
+            variations=variations,
+            project_id=str(project_id),
+        )
+
+    async def _score_content(
+        self, gateway: AIGateway, content: str, canvas: CanvasInput
+    ) -> float:
+        """AI-rate the content quality (0-100)."""
+        try:
+            prompt = f"""Rate the following content on a scale of 0-100 based on:
+- Relevance to topic: "{canvas.topic}"
+- Engagement and readability
+- Tone match: "{canvas.tone}"
+- Audience fit: "{canvas.target_audience}"
+
+Content:
+{content[:2000]}
+
+Return ONLY a number between 0 and 100, nothing else."""
+
+            response = await gateway.generate(
+                prompt,
+                system_prompt="You are a content quality evaluator. Return ONLY a number.",
+                task="content",
+                temperature=0.3,
+                max_tokens=10,
+            )
+
+            score = float(response.content.strip().rstrip("."))
+            return max(0, min(100, score))
+        except Exception:
+            return 75.0  # Default score on failure
+
+    def _build_content_prompt(self, canvas: CanvasInput) -> str:
+        """Build the content generation prompt from canvas data."""
+        parts = [f"Create compelling video content about: {canvas.topic}"]
+
+        if canvas.key_points:
+            points = "\n".join(f"- {kp}" for kp in canvas.key_points)
+            parts.append(f"\nKey points to cover:\n{points}")
+
+        if canvas.target_audience:
+            parts.append(f"\nTarget audience: {canvas.target_audience}")
+        if canvas.goal:
+            parts.append(f"\nGoal: {canvas.goal}")
+        if canvas.tone:
+            parts.append(f"\nTone: {canvas.tone}")
+        if canvas.length:
+            length_guide = {"short": "2-3 minutes", "medium": "5-7 minutes", "long": "10-15 minutes"}
+            parts.append(f"\nTarget length: {length_guide.get(canvas.length, canvas.length)}")
+        if canvas.platform:
+            parts.append(f"\nPlatform: {canvas.platform}")
+        if canvas.call_to_action:
+            parts.append(f"\nCall to action: {canvas.call_to_action}")
+        if canvas.brand_voice:
+            parts.append(f"\nBrand voice: {canvas.brand_voice}")
+        if canvas.additional_context:
+            parts.append(f"\nAdditional context: {canvas.additional_context}")
+
+        parts.append(
+            "\n\nWrite the full content in a natural, engaging style. "
+            "Structure it with clear sections suitable for video narration."
+        )
+
+        return "\n".join(parts)
+
+    # ── Script Generation (Step 3) ──────────────────────────
+
+    async def generate_script(
+        self,
+        user_id: uuid.UUID,
+        project_id: uuid.UUID,
+        additional_context: str = "",
+    ) -> ScriptResult:
+        """Generate a video script from the approved content."""
+        project = await self._get_project(project_id)
+        gateway = await self._get_gateway(user_id)
+
+        # Get the latest approved content
+        stmt = (
+            select(PipelineRun)
+            .where(
+                PipelineRun.project_id == project_id,
+                PipelineRun.stage == "content",
+                PipelineRun.status == "success",
+            )
+            .order_by(PipelineRun.created_at.desc())
+            .limit(2)
+        )
+        result = await self.session.execute(stmt)
+        content_runs = result.scalars().all()
+
+        if not content_runs:
+            from app.core.exceptions import ValidationError
+            raise ValidationError("No content generated yet. Complete the Content stage first.")
+
+        # Use the first (most recent) content run
+        content_text = content_runs[0].output_data.get("content", "")
+
+        system_prompt = """You are an expert video scriptwriter. Convert content into a structured video script.
+
+Return your script as valid JSON with this exact structure:
+{
+  "sections": [
+    {"section_type": "hook", "text": "...", "duration_estimate": "15s", "visual_notes": "..."},
+    {"section_type": "intro", "text": "...", "duration_estimate": "30s", "visual_notes": "..."},
+    {"section_type": "body", "text": "...", "duration_estimate": "2m", "visual_notes": "..."},
+    {"section_type": "climax", "text": "...", "duration_estimate": "45s", "visual_notes": "..."},
+    {"section_type": "cta", "text": "...", "duration_estimate": "20s", "visual_notes": "..."},
+    {"section_type": "outro", "text": "...", "duration_estimate": "15s", "visual_notes": "..."}
+  ],
+  "estimated_duration": "5m 30s"
+}"""
+
+        prompt = f"""Convert the following content into a professional video script:
+
+{content_text}
+
+{f"Additional direction: {additional_context}" if additional_context else ""}
+
+Create a complete script with hook, intro, body, climax, CTA, and outro sections.
+Include visual notes for each section describing what the viewer should see.
+Return ONLY valid JSON."""
+
+        try:
+            response = await gateway.generate(
+                prompt,
+                system_prompt=system_prompt,
+                task="script",
+                temperature=0.7,
+                max_tokens=8192,
+            )
+
+            # Parse the script JSON
+            text = response.content.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+
+            script_data = json.loads(text)
+            sections = [
+                ScriptSection(**s) for s in script_data.get("sections", [])
+            ]
+            full_script = "\n\n".join(
+                f"[{s.section_type.upper()}]\n{s.text}" for s in sections
+            )
+            word_count = len(full_script.split())
+
+            # Update project stage
+            project.current_stage = STAGE_MAP["script"]
+            await self.session.flush()
+
+            # Save run
+            await self._save_run(
+                project_id=project_id,
+                stage="script",
+                input_data={"content": content_text[:500], "additional_context": additional_context},
+                output_data=script_data,
+                response=response,
+            )
+
+            logger.info("script_generated", project_id=str(project_id))
+
+            return ScriptResult(
+                sections=sections,
+                full_script=full_script,
+                estimated_duration=script_data.get("estimated_duration", ""),
+                word_count=word_count,
+                project_id=str(project_id),
+            )
+
+        except json.JSONDecodeError:
+            # If JSON parsing fails, treat the entire response as a raw script
+            sections = [
+                ScriptSection(
+                    section_type="body",
+                    text=response.content,
+                    duration_estimate="",
+                    visual_notes="",
+                )
+            ]
+            await self._save_run(
+                project_id=project_id,
+                stage="script",
+                input_data={"content": content_text[:500]},
+                output_data={"raw_script": response.content},
+                response=response,
+            )
+
+            project.current_stage = STAGE_MAP["script"]
+            await self.session.flush()
+
+            return ScriptResult(
+                sections=sections,
+                full_script=response.content,
+                estimated_duration="",
+                word_count=len(response.content.split()),
+                project_id=str(project_id),
+            )
+
+        except AIProviderError as e:
+            await self._save_run(
+                project_id=project_id,
+                stage="script",
+                input_data={"content": content_text[:500]},
+                output_data={},
+                response=e,
+                status="error",
+                error_message=str(e),
+            )
+            raise
+
+    # ── Pipeline Status ─────────────────────────────────────
+
+    async def get_status(
+        self, project_id: uuid.UUID
+    ) -> PipelineStatusResponse:
+        """Get the current pipeline state for a project."""
+        project = await self._get_project(project_id)
+
+        stage_names = {v: k for k, v in STAGE_MAP.items()}
+        stage_name = stage_names.get(project.current_stage, "canvas")
+
+        # Get all runs
+        stmt = (
+            select(PipelineRun)
+            .where(PipelineRun.project_id == project_id)
+            .order_by(PipelineRun.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        runs = result.scalars().all()
+
+        run_responses = [
+            PipelineRunResponse(
+                id=str(r.id),
+                stage=r.stage,
+                provider=r.provider,
+                model=r.model,
+                input_tokens=r.input_tokens,
+                output_tokens=r.output_tokens,
+                cost_usd=r.cost_usd,
+                latency_ms=r.latency_ms,
+                status=r.status,
+                created_at=r.created_at,
+            )
+            for r in runs
+        ]
+
+        total_cost = sum(r.cost_usd for r in runs if r.status == "success")
+        total_tokens = sum(
+            r.input_tokens + r.output_tokens for r in runs if r.status == "success"
+        )
+
+        # Reconstruct content result from runs
+        content_result = None
+        content_runs = [r for r in runs if r.stage == "content" and r.status == "success"]
+        if content_runs:
+            variations = []
+            for cr in sorted(content_runs, key=lambda x: x.created_at):
+                od = cr.output_data or {}
+                variations.append(
+                    ContentVariation(
+                        content=od.get("content", ""),
+                        quality_score=od.get("quality_score", 0),
+                        word_count=od.get("word_count", 0),
+                        tone_analysis=od.get("tone_analysis", ""),
+                    )
+                )
+            content_result = ContentResult(
+                variations=variations[-2:],  # Last 2 variations
+                project_id=str(project_id),
+            )
+
+        # Reconstruct script result
+        script_result = None
+        script_runs = [r for r in runs if r.stage == "script" and r.status == "success"]
+        if script_runs:
+            sr = script_runs[0]  # Most recent
+            od = sr.output_data or {}
+            sections = [ScriptSection(**s) for s in od.get("sections", [])]
+            full_script = od.get("raw_script", "") or "\n\n".join(
+                f"[{s.section_type.upper()}]\n{s.text}" for s in sections
+            )
+            script_result = ScriptResult(
+                sections=sections,
+                full_script=full_script,
+                estimated_duration=od.get("estimated_duration", ""),
+                word_count=len(full_script.split()),
+                project_id=str(project_id),
+            )
+
+        return PipelineStatusResponse(
+            project_id=str(project_id),
+            current_stage=project.current_stage,
+            stage_name=stage_name,
+            canvas_data=project.canvas_data,
+            content_result=content_result,
+            script_result=script_result,
+            runs=run_responses,
+            total_cost_usd=total_cost,
+            total_tokens=total_tokens,
+        )

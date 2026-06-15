@@ -1,0 +1,229 @@
+"use client";
+
+import { useState, use } from "react";
+import { useRouter } from "next/navigation";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { PipelineTabs } from "@/components/pipeline/pipeline-tabs";
+import { CanvasForm } from "@/components/pipeline/canvas-form";
+import { ContentViewer } from "@/components/pipeline/content-viewer";
+import { ScriptEditor } from "@/components/pipeline/script-editor";
+import {
+  usePipelineStatus,
+  useGenerateContent,
+  useGenerateScript,
+  useRegenerate,
+  useSuggestKeyPoints,
+} from "@/hooks/use-pipeline";
+import { useAuthStore } from "@/stores/auth";
+import { toast } from "sonner";
+import {
+  ArrowLeft,
+  DollarSign,
+  Zap,
+  Clock,
+  Loader2,
+} from "lucide-react";
+
+// TODO: Replace with actual workspace context
+const TEMP_WORKSPACE_ID = "00000000-0000-0000-0000-000000000000";
+
+const STAGE_NAMES = ["canvas", "content", "script", "storyboard", "voice", "avatar", "video"];
+
+export default function ProjectDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id: projectId } = use(params);
+  const router = useRouter();
+
+  const { data: status, isLoading } = usePipelineStatus(TEMP_WORKSPACE_ID, projectId);
+  const generateContent = useGenerateContent(TEMP_WORKSPACE_ID, projectId);
+  const generateScript = useGenerateScript(TEMP_WORKSPACE_ID, projectId);
+  const regenerate = useRegenerate(TEMP_WORKSPACE_ID, projectId);
+  const suggestKeyPoints = useSuggestKeyPoints(TEMP_WORKSPACE_ID, projectId);
+
+  const currentStage = status?.current_stage ?? 0;
+  const [activeTab, setActiveTab] = useState(STAGE_NAMES[currentStage] || "canvas");
+
+  // Sync tab with stage when data loads
+  const effectiveTab = activeTab;
+
+  const isGenerating =
+    generateContent.isPending ||
+    generateScript.isPending ||
+    regenerate.isPending;
+
+  // ── Handlers ─────────────────────────────────────────
+
+  const handleGenerateContent = async (canvas: Parameters<typeof generateContent.mutateAsync>[0]) => {
+    try {
+      await generateContent.mutateAsync(canvas);
+      setActiveTab("content");
+      toast.success("Content generated!");
+    } catch (err: any) {
+      toast.error(err?.detail || err?.error?.message || "Generation failed");
+    }
+  };
+
+  const handleSuggestKeyPoints = async (topic: string, audience: string) => {
+    try {
+      const result = await suggestKeyPoints.mutateAsync({ topic, target_audience: audience });
+      toast.success("Key points suggested!");
+      return result.key_points;
+    } catch (err: any) {
+      toast.error(err?.detail || "Failed to suggest key points");
+      return [];
+    }
+  };
+
+  const handleGenerateScript = async () => {
+    try {
+      await generateScript.mutateAsync({});
+      setActiveTab("script");
+      toast.success("Script generated!");
+    } catch (err: any) {
+      toast.error(err?.detail || err?.error?.message || "Script generation failed");
+    }
+  };
+
+  const handleRegenerateContent = async (additionalContext: string) => {
+    try {
+      await regenerate.mutateAsync({ stage: "content", additional_context: additionalContext });
+      toast.success("Content regenerated!");
+    } catch (err: any) {
+      toast.error(err?.detail || "Regeneration failed");
+    }
+  };
+
+  const handleRegenerateScript = async (additionalContext: string) => {
+    try {
+      await regenerate.mutateAsync({ stage: "script", additional_context: additionalContext });
+      toast.success("Script regenerated!");
+    } catch (err: any) {
+      toast.error(err?.detail || "Regeneration failed");
+    }
+  };
+
+  // ── Loading State ────────────────────────────────────
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 p-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/projects")}
+            className="gap-1.5"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Projects
+          </Button>
+          <div className="h-5 w-px bg-border" />
+          <h1 className="text-lg font-semibold">Project Pipeline</h1>
+        </div>
+
+        {/* Cost & Token Summary */}
+        {status && (status.total_cost_usd > 0 || status.total_tokens > 0) && (
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <DollarSign className="h-3 w-3" />
+              ${status.total_cost_usd.toFixed(4)}
+            </span>
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Zap className="h-3 w-3" />
+              {status.total_tokens.toLocaleString()} tokens
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Pipeline Tabs */}
+      <PipelineTabs
+        currentStage={currentStage}
+        activeTab={effectiveTab}
+        onTabChange={setActiveTab}
+        isGenerating={isGenerating}
+      />
+
+      {/* Tab Content */}
+      <div className="flex-1 overflow-auto">
+        {effectiveTab === "canvas" && (
+          <CanvasForm
+            initialData={status?.canvas_data || undefined}
+            onGenerate={handleGenerateContent}
+            onSuggestKeyPoints={handleSuggestKeyPoints}
+            isGenerating={generateContent.isPending}
+            isSuggesting={suggestKeyPoints.isPending}
+          />
+        )}
+
+        {effectiveTab === "content" && status?.content_result && (
+          <ContentViewer
+            variations={status.content_result.variations}
+            onSelect={() => {}}
+            onRegenerate={handleRegenerateContent}
+            onProceed={handleGenerateScript}
+            isRegenerating={regenerate.isPending}
+          />
+        )}
+
+        {effectiveTab === "content" && !status?.content_result && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">
+              Go to Canvas tab to generate content first.
+            </p>
+          </div>
+        )}
+
+        {effectiveTab === "script" && status?.script_result && (
+          <ScriptEditor
+            sections={status.script_result.sections}
+            fullScript={status.script_result.full_script}
+            estimatedDuration={status.script_result.estimated_duration}
+            wordCount={status.script_result.word_count}
+            onRegenerate={handleRegenerateScript}
+            isRegenerating={regenerate.isPending}
+          />
+        )}
+
+        {effectiveTab === "script" && !status?.script_result && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <p className="text-muted-foreground">
+              Select content and proceed to generate the script.
+            </p>
+          </div>
+        )}
+
+        {/* Future stages */}
+        {["storyboard", "voice", "avatar", "video"].includes(effectiveTab) && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+              <Clock className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="font-semibold text-lg mb-1">Coming Soon</h3>
+            <p className="text-muted-foreground text-sm max-w-xs">
+              The {effectiveTab} stage will be available in a future update.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

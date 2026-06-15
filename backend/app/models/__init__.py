@@ -2,8 +2,10 @@
 Models package — imports all models so Alembic can discover them.
 """
 
+from app.models.ai_preference import AIPreference
 from app.models.audit_log import AuditLog
 from app.models.base import BaseModel
+from app.models.pipeline_run import PipelineRun
 from app.models.project import Project, ProjectStatus
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -19,4 +21,7 @@ __all__ = [
     "ProjectStatus",
     "RefreshToken",
     "AuditLog",
+    "AIPreference",
+    "PipelineRun",
 ]
+

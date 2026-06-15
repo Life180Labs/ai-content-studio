@@ -47,6 +47,15 @@ uvicorn app.main:app --reload --port 8000
 
 API docs available at: `http://localhost:8000/docs`
 
+### 4. Background Worker (Phase 3+)
+
+Open a **new terminal** to run the Celery worker for LangGraph video processing:
+
+```bash
+cd backend
+celery -A app.worker.celery_app worker --loglevel=info
+```
+
 ### 4. Frontend
 
 ```bash
@@ -74,6 +83,7 @@ ai-content-studio/
 │   ├── app/schemas/  # Pydantic schemas
 │   ├── app/repositories/  # Data access layer
 │   ├── app/services/ # Business logic (Auth, Pipeline orchestration, AI Preferences)
+│   ├── app/workflow/ # LangGraph AI Orchestration & Celery tasks
 │   └── app/db/       # Session factory + Alembic
 ├── docker-compose.yml
 └── .env.example
@@ -108,6 +118,14 @@ ai-content-studio/
 | `POST` | `.../pipeline/script` | Generate structured video script |
 | `POST` | `.../pipeline/regenerate` | Regenerate specific pipeline stage |
 | `GET` | `.../pipeline/status` | Get current project pipeline state |
+
+### Phase 3: LangGraph & Media Generation
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `.../pipeline/storyboard` | Generate scene-by-scene storyboard (Celery task) |
+| `POST` | `.../pipeline/voice` | Generate audio via ElevenLabs (Celery task) |
+| `POST` | `.../pipeline/avatar` | Generate video via HeyGen (Celery task) |
 
 ## Environment Variables
 

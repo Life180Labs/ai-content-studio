@@ -40,16 +40,21 @@ class PipelineGraphState(TypedDict):
     # ── Pipeline Stage Data ──
     script: str  # The approved script to base the storyboard on
     
-    # Using `operator.setitem` style merge for dictionaries if we were appending, 
-    # but for simple replacement we don't need Annotated if we just overwrite.
-    # However, LangGraph recommends using Annotated for reducers if we want to append.
-    storyboard_scenes: Annotated[list[dict], operator.add]
+    # Simple list type without operator.add ensures we overwrite rather than append when saving new edits
+    storyboard_scenes: list[dict]
+    
+    # Validation layer: strictly filtered scenes (included = True, deleted = False) intended for final generation
+    active_scenes: list[dict]
     
     selected_voice_id: str | None
-    voice_audio_paths: Annotated[dict[str, str], merge_dicts]  # scene_index -> file path
+    voice_audio_paths: dict[str, str]  # scene_index -> file path
+    use_custom_voice: bool
     
     selected_avatar_id: str | None
-    avatar_video_ids: Annotated[dict[str, str], merge_dicts]   # scene_index -> heygen video id
+    avatar_video_ids: dict[str, str]   # scene_index -> heygen video id
+    
+    aspect_ratio: str
+    video_quality: str
     
     # ── Orchestration state ──
     current_node: str

@@ -50,11 +50,14 @@ export interface ScriptResult {
 }
 
 export interface StoryboardScene {
+  scene_id?: string;
   scene_index: number;
   voice_text: string;
   visual_prompt: string;
   avatar_action: string;
   camera_direction: string;
+  included?: boolean;
+  deleted?: boolean;
 }
 
 export interface StoryboardResult {
@@ -193,18 +196,31 @@ export function useGenerateStoryboard(workspaceId: string | null, projectId: str
   });
 }
 
-export interface VoiceGeneratePayload {
+export interface VoiceAvatarGeneratePayload {
   selected_voice_id: string;
-  storyboard_scenes: StoryboardScene[];
-  video_frame_size: string;
-  video_quality: string;
+  selected_avatar_id: string;
+  use_custom_voice: boolean;
+  storyboard_scenes?: StoryboardScene[];
+  video_frame_size?: string;
+  video_quality?: string;
 }
 
-export function useGenerateVoice(workspaceId: string | null, projectId: string) {
+export function useGenerateAssets(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
-  return useMutation<{ task_id: string }, unknown, VoiceGeneratePayload>({
+  return useMutation<{ task_id: string }, unknown, VoiceAvatarGeneratePayload>({
     mutationFn: (data) =>
-      api.post(`${pipelineUrl(workspaceId, projectId)}/voice`, data),
+      api.post(`${pipelineUrl(workspaceId, projectId)}/assets`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
+    },
+  });
+}
+
+export function useMergeVideos(workspaceId: string | null, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<{ status: string, file_path: string }, unknown, void>({
+    mutationFn: () =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/merge`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
     },
@@ -229,16 +245,7 @@ export function useRegenerateScene(workspaceId: string | null, projectId: string
   });
 }
 
-export function useGenerateAvatar(workspaceId: string | null, projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation<{ task_id: string }, unknown, AvatarGeneratePayload>({
-    mutationFn: (payload) =>
-      api.post(`${pipelineUrl(workspaceId, projectId)}/avatar`, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
-    },
-  });
-}
+
 
 export function usePollVideoStatus(workspaceId: string | null, projectId: string, enabled: boolean) {
   return useQuery({

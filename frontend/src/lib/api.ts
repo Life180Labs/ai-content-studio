@@ -2,7 +2,7 @@
  * API client with JWT interceptors and automatic token refresh.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Dynamic base URL getter to handle SSR/CSR mismatch
 
 interface ApiError {
   error: {
@@ -14,11 +14,13 @@ interface ApiError {
 }
 
 class ApiClient {
-  private baseUrl: string;
-
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl;
+  private get baseUrl(): string {
+    if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+    if (typeof window !== "undefined") return `http://${window.location.hostname}:8000`;
+    return "http://localhost:8000";
   }
+
+  constructor() {}
 
   private getAccessToken(): string | null {
     if (typeof window === "undefined") return null;
@@ -85,7 +87,7 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers as Record<string, string>),
     };
 
@@ -171,4 +173,4 @@ class ApiClient {
   }
 }
 
-export const api = new ApiClient(API_BASE);
+export const api = new ApiClient();

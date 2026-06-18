@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -143,11 +144,14 @@ class PipelineStatusResponse(BaseModel):
 # ── Storyboard (Step 4) ─────────────────────────────────────
 
 class StoryboardScene(BaseModel):
+    scene_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     scene_index: int
     voice_text: str
     visual_prompt: str
     avatar_action: str
     camera_direction: str
+    included: bool = True
+    deleted: bool = False
 
 class StoryboardResult(BaseModel):
     scenes: list[StoryboardScene]
@@ -176,8 +180,10 @@ class VoiceResult(BaseModel):
     project_id: str
     stage: str = "voice"
 
-class VoiceGenerateRequest(BaseModel):
+class VoiceAvatarGenerateRequest(BaseModel):
     selected_voice_id: str
+    selected_avatar_id: str
+    use_custom_voice: bool = True
     storyboard_scenes: list[StoryboardScene]
     video_frame_size: str = "16:9"
     video_quality: str = "1080p"
@@ -195,7 +201,5 @@ class VideoResult(BaseModel):
     project_id: str
     stage: str = "video"
 
-class AvatarGenerateRequest(BaseModel):
-    selected_avatar_id: str
-    use_custom_voice: bool = True
+
 

@@ -35,7 +35,7 @@ class OpenAIProvider(AIProvider):
         model: str | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
         response_format: str | None = None,
     ) -> AIResponse:
         model = model or "gpt-4o-mini"
@@ -51,8 +51,9 @@ class OpenAIProvider(AIProvider):
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
             }
+            if max_tokens is not None:
+                kwargs["max_completion_tokens"] = max_tokens
             if response_format == "json":
                 kwargs["response_format"] = { "type": "json_object" }
 
@@ -110,3 +111,24 @@ class OpenAIProvider(AIProvider):
                 provider=self.provider_name,
                 model=model,
             ) from e
+
+    async def generate_image(self, prompt: str, *, model: str = "dall-e-3", size: str = "1024x1024") -> bytes:
+        """Generate an image using OpenAI DALL-E and return the image bytes."""
+        import httpx
+        try:
+            response = await self.client.images.generate(
+                model=model,
+                prompt=prompt,
+                size=size,
+                quality="standard",
+                n=1,
+            )
+            image_url = response.data[0].url
+            
+            async with httpx.AsyncClient() as http_client:
+                img_res = await http_client.get(image_url, timeout=30.0)
+                img_res.raise_for_status()
+                return img_res.content
+
+        except Exception as e:
+            raise AIProviderError(f"OpenAI image generation error: {e}", provider=self.provider_name, model=model) from e

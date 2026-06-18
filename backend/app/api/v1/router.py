@@ -11,6 +11,7 @@ from app.api.v1.endpoints.pipeline import router as pipeline_router
 from app.api.v1.endpoints.projects import router as projects_router
 from app.api.v1.endpoints.workspaces import router as workspaces_router
 from app.api.v1.endpoints.assets import router as assets_router
+from app.api.v1.endpoints.digital_humans import router as digital_humans_router
 
 api_router = APIRouter()
 
@@ -24,5 +25,10 @@ api_router.include_router(
     assets_router,
     prefix="/workspaces/{workspace_id}/assets",
     tags=["assets"],
+)
+api_router.include_router(
+    digital_humans_router,
+    prefix="/workspaces/{workspace_id}/digital-humans",
+    tags=["digital-humans"],
 )
 

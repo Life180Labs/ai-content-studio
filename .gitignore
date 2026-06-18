@@ -64,3 +64,7 @@ yarn-error.log*
 # Documentation / local docs folder
 docs/
 
+# Scratch and test files
+scratch_*.py
+scratch_*.txt
+scratch_*.json

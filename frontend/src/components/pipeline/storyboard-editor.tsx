@@ -11,6 +11,7 @@ import { ArrowRight, Image as ImageIcon, Camera, User, FileText, Loader2, Plus, 
 import type { StoryboardScene } from "@/hooks/use-pipeline";
 import { useSaveStoryboard, useRegenerateScene } from "@/hooks/use-pipeline";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 
 interface StoryboardEditorProps {
   workspaceId: string | null;
@@ -78,7 +79,7 @@ export function StoryboardEditor({
     );
   }
 
-  const updateScene = (index: number, field: keyof StoryboardScene, value: string) => {
+  const updateScene = (index: number, field: keyof StoryboardScene, value: any) => {
     const newScenes = [...scenes];
     newScenes[index] = { ...newScenes[index], [field]: value };
     setScenes(newScenes);
@@ -91,12 +92,15 @@ export function StoryboardEditor({
       voice_text: "",
       visual_prompt: "",
       avatar_action: "",
-      camera_direction: ""
+      camera_direction: "",
+      included: true,
+      deleted: false,
+      scene_id: crypto.randomUUID()
     }]);
   };
 
   const deleteScene = (index: number) => {
-    setScenes(scenes.filter((_, i) => i !== index));
+    updateScene(index, "deleted", true);
   };
 
   const handleRegenerateScene = async (index: number) => {
@@ -153,9 +157,13 @@ export function StoryboardEditor({
           <p className="text-sm text-muted-foreground mt-0.5">
             Review and edit the AI-generated scenes before generating voice and video.
           </p>
+          <div className="mt-2 inline-flex items-center gap-1.5 bg-primary/10 text-primary px-2.5 py-1 rounded-md text-sm font-medium">
+            <span>Scenes Selected for Generation:</span>
+            <span className="font-bold">{scenes.filter(s => s.included !== false && !s.deleted).length}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <span className="text-sm text-muted-foreground whitespace-nowrap">Format:</span>
             <Select value={videoFrameSize} onValueChange={(v) => v && setVideoFrameSize(v)}>
               <SelectTrigger className="w-[120px]">
@@ -168,7 +176,7 @@ export function StoryboardEditor({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <span className="text-sm text-muted-foreground whitespace-nowrap">Quality:</span>
             <Select value={videoQuality} onValueChange={(v) => v && setVideoQuality(v)}>
               <SelectTrigger className="w-[110px]">
@@ -186,6 +194,8 @@ export function StoryboardEditor({
 
       <div className="space-y-4">
         {scenes.map((scene, index) => {
+          if (scene.deleted) return null;
+
           const duration = estimateDuration(scene.voice_text);
           const isOverLimit = duration > 8;
 
@@ -219,11 +229,21 @@ export function StoryboardEditor({
                 {/* Left Column: Visual Prompt Representation */}
                 <div className="md:w-5/12 bg-muted/30 p-6 border-r border-border/50 flex flex-col justify-start">
                   <div className="flex items-center gap-3 mb-4">
-                    <Badge variant="outline" className="w-fit bg-background">
+                    <Badge variant={scene.included !== false ? "outline" : "secondary"} className={scene.included !== false ? "bg-background" : ""}>
                       Scene {scene.scene_index}
                     </Badge>
+                    <div className="flex items-center space-x-2 ml-auto">
+                      <span className="text-xs font-medium text-muted-foreground cursor-pointer" onClick={() => updateScene(index, "included", scene.included === false ? true : false)}>
+                        Include
+                      </span>
+                      <Switch 
+                        checked={scene.included !== false} 
+                        onCheckedChange={(checked) => updateScene(index, "included", checked)} 
+                        className="scale-75 data-[state=checked]:bg-primary"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-4 text-sm flex-1">
+                  <div className={`space-y-4 text-sm flex-1 ${scene.included === false ? 'opacity-50 pointer-events-none' : ''}`}>
                     <div className="space-y-2">
                       <span className="font-semibold text-xs text-muted-foreground flex items-center gap-1.5">
                         <ImageIcon className="h-3.5 w-3.5" />
@@ -250,7 +270,7 @@ export function StoryboardEditor({
                 </div>
 
                 {/* Right Column: Avatar & Voice */}
-                <div className="md:w-7/12 p-6 flex flex-col justify-start space-y-4">
+                <div className={`md:w-7/12 p-6 flex flex-col justify-start space-y-4 ${scene.included === false ? 'opacity-50 pointer-events-none' : ''}`}>
                   <div className="bg-primary/5 rounded-lg p-4 border border-primary/10">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-semibold text-xs text-primary flex items-center gap-1.5">
@@ -294,12 +314,12 @@ export function StoryboardEditor({
         </Button>
       </div>
 
-      <div className="flex justify-between items-center pt-6 border-t border-border">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6 border-t border-border mt-8">
         <Button
           variant="outline"
           onClick={handleSaveDraft}
           disabled={saveStoryboard.isPending}
-          className="gap-2"
+          className="gap-2 w-full sm:w-auto"
         >
           {saveStoryboard.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save Draft
@@ -308,7 +328,7 @@ export function StoryboardEditor({
         <Button
           onClick={handleProceed}
           size="lg"
-          className="gap-2 min-w-[200px]"
+          className="gap-2 w-full sm:w-auto sm:min-w-[200px]"
           disabled={isGeneratingVoice || saveStoryboard.isPending}
         >
           {isGeneratingVoice || saveStoryboard.isPending ? (

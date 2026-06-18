@@ -97,7 +97,7 @@ export function VoiceSelector({ workspaceId, projectId, onProceed, isGeneratingA
 
   return (
     <div className="space-y-6 p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">Select Voice</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
@@ -106,12 +106,12 @@ export function VoiceSelector({ workspaceId, projectId, onProceed, isGeneratingA
         </div>
         
         <Dialog open={isCloneOpen} onOpenChange={setIsCloneOpen}>
-          <DialogTrigger render={
-            <Button variant="outline" className="gap-2">
+          <DialogTrigger asChild>
+            <Button variant="outline" className="gap-2" disabled={isGeneratingAvatar}>
               <Mic className="h-4 w-4" />
               Clone New Voice
             </Button>
-          } />
+          </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Clone Your Voice</DialogTitle>
@@ -170,13 +170,16 @@ export function VoiceSelector({ workspaceId, projectId, onProceed, isGeneratingA
           <p className="text-muted-foreground">Fetching voices from ElevenLabs...</p>
         </div>
       ) : (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {voices?.map((voice) => (
           <Card
             key={voice.id}
-            onClick={() => setSelectedVoice(voice.id)}
+            onClick={() => {
+              if (!isGeneratingAvatar) setSelectedVoice(voice.id);
+            }}
             className={cn(
-              "cursor-pointer transition-all hover:shadow-md",
+              "transition-all",
+              isGeneratingAvatar ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:shadow-md",
               selectedVoice === voice.id
                 ? "ring-2 ring-primary border-primary bg-primary/5"
                 : "border-border/50 hover:border-border"
@@ -212,6 +215,7 @@ export function VoiceSelector({ workspaceId, projectId, onProceed, isGeneratingA
                 <Button
                   variant="ghost"
                   size="icon"
+                  disabled={isGeneratingAvatar}
                   className={cn("h-8 w-8 rounded-full", playingId === voice.id && "text-primary")}
                   onClick={(e) => handlePlay(voice.id, e)}
                 >

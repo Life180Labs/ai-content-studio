@@ -65,7 +65,6 @@ Return ONLY valid JSON with this structure:
             system_prompt=system_prompt,
             task="storyboard",
             temperature=0.7,
-            max_tokens=4096,
             response_format="json"
         )
 
@@ -84,15 +83,13 @@ Return ONLY valid JSON with this structure:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            # Try to auto-fix missing commas between array objects
-            fixed_text = re.sub(r'\}\s*\{', '}, {', text)
+            import json_repair
             try:
-                data = json.loads(fixed_text)
-            except json.JSONDecodeError as e:
+                # Use json_repair to robustly fix truncated or malformed JSON from the LLM
+                data = json_repair.loads(text)
+            except Exception as e:
                 logger.error("json_decode_error", raw_text=text, error=str(e))
-                err_idx = getattr(e, 'pos', 0)
-                snippet = text[max(0, err_idx - 100):min(len(text), err_idx + 100)]
-                return {"error_message": f"Failed to parse JSON: {str(e)}. Snippet near error: ...{snippet}...", "current_node": "generate_storyboard"}
+                return {"error_message": f"Failed to parse JSON: {str(e)}", "current_node": "generate_storyboard"}
 
         scenes = data.get("scenes", [])
         
@@ -107,107 +104,125 @@ Return ONLY valid JSON with this structure:
         return {"error_message": str(e), "current_node": "generate_storyboard"}
 
 
-async def generate_voice(state: PipelineGraphState) -> dict:
-    """Node: Generate voice audio for each storyboard scene."""
-    logger.info("node_start", node="generate_voice", project_id=state["project_id"])
+async def generate_assets(state: PipelineGraphState) -> dict:
+    """Node: Generate voice audio and avatar video for each scene sequentially."""
+    logger.info("node_start", node="generate_assets", project_id=state["project_id"])
     
-    # In a real setup, we'd use the gateway to route to ElevenLabs
-    # For now, we simulate this as the ElevenLabs provider is added
     from app.gateway.providers.elevenlabs import ElevenLabsProvider
-    
-    keys = state.get("provider_keys", {})
-    el_key = keys.get("elevenlabs")
-    
-    if not el_key:
-        return {"error_message": "ElevenLabs API key is missing. Add it in Settings."}
-        
-    provider = ElevenLabsProvider(api_key=el_key)
-    scenes = state.get("storyboard_scenes", [])
-    voice_id = state.get("selected_voice_id", "Rachel")
-    
-    audio_paths = {}
-    
-    try:
-        for idx, scene in enumerate(scenes):
-            text = scene.get("voice_text", "")
-            if not text.strip():
-                continue
-                
-            audio_bytes, metadata = await provider.generate_voice(text, voice_id=voice_id)
-            
-            # Save audio locally for phase 3 testing
-            import os
-            os.makedirs("storage/audio", exist_ok=True)
-            path = f"storage/audio/{state['project_id']}_scene_{idx}.mp3"
-            with open(path, "wb") as f:
-                f.write(audio_bytes)
-                
-            audio_paths[str(idx)] = path
-            
-        return {
-            "voice_audio_paths": audio_paths,
-            "current_node": "generate_voice",
-            "error_message": None,
-        }
-    except Exception as e:
-        logger.error("voice_generation_error", error=str(e))
-        return {"error_message": str(e), "current_node": "generate_voice"}
-
-
-async def generate_avatar_video(state: PipelineGraphState) -> dict:
-    """Node: Generate avatar video using HeyGen for each scene."""
-    logger.info("node_start", node="generate_avatar_video", project_id=state["project_id"])
-    
     from app.gateway.providers.heygen import HeyGenProvider
     
+    gateway = _get_gateway(state)
+    default_provider_name = gateway.default_provider
+    try:
+        image_provider = gateway._get_provider(default_provider_name)
+    except Exception:
+        image_provider = None
+
     keys = state.get("provider_keys", {})
+    el_key = keys.get("elevenlabs")
     hg_key = keys.get("heygen")
     
+    if not el_key:
+        return {"error_message": "ElevenLabs API key is missing. Add it in Settings.", "current_node": "generate_assets"}
     if not hg_key:
-        return {"error_message": "HeyGen API key is missing. Add it in Settings."}
+        return {"error_message": "HeyGen API key is missing. Add it in Settings.", "current_node": "generate_assets"}
         
-    provider = HeyGenProvider(api_key=hg_key)
-    scenes = state.get("storyboard_scenes", [])
-    avatar_id = state.get("selected_avatar_id") or "Anna_public_3_20240108"
-    voice_id = state.get("selected_voice_id") or "1bd001e7e50f421d891986aad5158bc8" # HeyGen default voice
-    use_custom_voice = state.get("use_custom_voice", True)
-    voice_audio_paths = state.get("voice_audio_paths", {})
+    voice_provider = ElevenLabsProvider(api_key=el_key)
+    avatar_provider = HeyGenProvider(api_key=hg_key)
     
-    video_ids = {}
+    scenes = state.get("storyboard_scenes", [])
+    voice_id = state.get("selected_voice_id", "Rachel")
+    avatar_id = state.get("selected_avatar_id") or "Anna_public_3_20240108"
+    use_custom_voice = state.get("use_custom_voice", True)
+    
+    aspect_ratio = state.get("aspect_ratio", "16:9")
+    video_quality = state.get("video_quality", "production")
+    
+    if aspect_ratio == "9:16":
+        dimension = {"width": 1080, "height": 1920}
+    elif aspect_ratio == "1:1":
+        dimension = {"width": 1080, "height": 1080}
+    else:
+        dimension = {"width": 1920, "height": 1080}
+        
+    test_mode = (video_quality == "draft")
+    
+    audio_paths = state.get("voice_audio_paths", {})
+    video_ids = state.get("avatar_video_ids", {})
     
     try:
         import os
+        os.makedirs("storage/audio", exist_ok=True)
+        
+        active_scenes = []
         for idx, scene in enumerate(scenes):
-            script = scene.get("voice_text", "")
-            if not script.strip():
+            is_included = scene.get("included", True)
+            is_deleted = scene.get("deleted", False)
+            if is_included and not is_deleted:
+                active_scenes.append(scene)
+            else:
+                logger.info("skipped_scene", scene_index=scene.get("scene_index", idx), reason="Deleted" if is_deleted else "Excluded by User")
+
+        for scene in active_scenes:
+            idx = scene.get("scene_index", scenes.index(scene))
+            text = scene.get("voice_text", "")
+            if not text.strip():
                 continue
-                
+            
+            # 1. Generate Voice
             audio_asset_id = None
             if use_custom_voice:
-                audio_path = voice_audio_paths.get(str(idx))
-                if audio_path and os.path.exists(audio_path):
-                    with open(audio_path, "rb") as f:
-                        audio_bytes = f.read()
-                    filename = os.path.basename(audio_path)
-                    audio_asset_id = await provider.upload_audio_asset(audio_bytes, filename)
-                else:
-                    logger.warning("missing_audio_file_for_scene", scene_index=idx)
-                    # Fallback to text if missing
+                try:
+                    logger.info("generating_voice", scene=idx, voice_id=voice_id)
+                    audio_bytes, metadata = await voice_provider.generate_voice(text, voice_id=voice_id)
+                    path = f"storage/audio/{state['project_id']}_scene_{idx}.mp3"
+                    with open(path, "wb") as f:
+                        f.write(audio_bytes)
+                    audio_paths[str(idx)] = path
+                    
+                    filename = os.path.basename(path)
+                    audio_asset_id = await avatar_provider.upload_audio_asset(audio_bytes, filename)
+                except Exception as e:
+                    logger.warning("voice_generation_failed", scene=idx, error=str(e))
+            
+            # 2. Generate Dynamic Background
+            background = {"type": "color", "value": "#00FF00"}
+            visual_prompt = scene.get("visual_prompt")
+            
+            if visual_prompt and image_provider and hasattr(image_provider, "generate_image"):
+                try:
+                    logger.info("generating_background", scene=idx, provider=default_provider_name)
+                    size = "1024x1024" if aspect_ratio == "1:1" else ("1920x1080" if aspect_ratio == "16:9" else "1080x1920")
+                    img_bytes = await image_provider.generate_image(
+                        prompt=visual_prompt,
+                        size=size
+                    )
+                    bg_asset_id = await avatar_provider.upload_asset(img_bytes, "image/png")
+                    background = {"type": "image", "asset_id": bg_asset_id}
+                except Exception as e:
+                    logger.warning("background_generation_failed", error=str(e))
 
-            result = await provider.create_avatar_video(
-                script=script if not audio_asset_id else None,
+            # 3. Generate Avatar Video
+            logger.info("generating_avatar_video", scene=idx, avatar_id=avatar_id)
+            result = await avatar_provider.create_avatar_video(
+                script=text if not audio_asset_id else None,
                 avatar_id=avatar_id,
                 voice_id=voice_id if not audio_asset_id else None,
-                audio_asset_id=audio_asset_id
+                audio_asset_id=audio_asset_id,
+                dimension=dimension,
+                test_mode=test_mode,
+                background=background
             )
             
             video_ids[str(idx)] = result["video_id"]
             
         return {
+            "voice_audio_paths": audio_paths,
             "avatar_video_ids": video_ids,
-            "current_node": "generate_avatar_video",
+            "active_scenes": active_scenes,
+            "current_node": "generate_assets",
             "error_message": None,
         }
     except Exception as e:
-        logger.error("avatar_generation_error", error=str(e))
-        return {"error_message": str(e), "current_node": "generate_avatar_video"}
+        logger.error("assets_generation_error", error=str(e))
+        return {"error_message": str(e), "current_node": "generate_assets"}

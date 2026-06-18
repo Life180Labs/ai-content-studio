@@ -8,28 +8,24 @@ from langgraph.graph import StateGraph, START, END
 import structlog
 
 from app.workflow.state import PipelineGraphState
-from app.workflow.nodes import generate_storyboard, generate_voice, generate_avatar_video
+from app.workflow.nodes import generate_storyboard, generate_assets
 
 logger = structlog.get_logger("workflow.graph")
 
 def _route_start(state: PipelineGraphState) -> str:
     """Route from START to the requested node."""
     node = state.get("current_node")
-    if node in ["generate_storyboard", "generate_voice", "generate_avatar_video"]:
+    if node in ["generate_storyboard", "generate_assets"]:
         return node
     return "generate_storyboard"
 
-def _route_after_storyboard(state: PipelineGraphState) -> Literal["generate_voice", "wait_for_user"]:
+def _route_after_storyboard(state: PipelineGraphState) -> Literal["generate_assets", "wait_for_user"]:
     """Routing logic after storyboard generation."""
     if state.get("error_message"):
-        # We should handle fallback here if configured, for now just pause
         return "wait_for_user"
     return "wait_for_user"  # Wait for human approval of storyboard
 
-
-def _route_after_voice(state: PipelineGraphState) -> Literal["generate_avatar_video", "wait_for_user"]:
-    if state.get("error_message"):
-        return "wait_for_user"
+def _route_after_assets(state: PipelineGraphState) -> Literal["wait_for_user"]:
     return "wait_for_user"
 
 
@@ -42,8 +38,7 @@ workflow = StateGraph(PipelineGraphState)
 
 # Add Nodes
 workflow.add_node("generate_storyboard", generate_storyboard)
-workflow.add_node("generate_voice", generate_voice)
-workflow.add_node("generate_avatar_video", generate_avatar_video)
+workflow.add_node("generate_assets", generate_assets)
 workflow.add_node("wait_for_user", wait_for_user)
 
 # Conditional Routing from START
@@ -51,12 +46,7 @@ workflow.add_conditional_edges(START, _route_start)
 
 # Conditional Routing
 workflow.add_conditional_edges("generate_storyboard", _route_after_storyboard)
-workflow.add_conditional_edges("generate_voice", _route_after_voice)
-
-# Edges from wait_for_user are controlled externally when resuming the thread
-# For example, we resume to "generate_voice" after approving storyboard.
-# This means the graph will be invoked with a specific start point or we use interrupt
-workflow.add_edge("generate_avatar_video", END)
+workflow.add_edge("generate_assets", END)
 
 # In Phase 3, we compile with a checkpointer in the task logic.
 # For now, we compile the graph so it can be exported.

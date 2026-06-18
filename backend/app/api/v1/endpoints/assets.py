@@ -66,6 +66,53 @@ async def get_workspace_avatars(
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+@router.post("/avatars/custom")
+async def create_custom_avatar(
+    workspace_id: str,
+    name: str = Form(...),
+    avatar_type: str = Form(...),
+    prompt: str | None = Form(None),
+    file: UploadFile | None = File(None),
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        wid = _parse_uuid(workspace_id, "workspace_id")
+        file_bytes = await file.read() if file else None
+        content_type = file.content_type if file else "image/png"
+        
+        service = AssetService(session)
+        return await service.create_custom_avatar(
+            user_id=user_id,
+            workspace_id=wid,
+            name=name,
+            avatar_type=avatar_type,
+            prompt=prompt,
+            file_bytes=file_bytes,
+            content_type=content_type
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except AIProviderError as e:
+        with open("avatar_error_debug.txt", "w") as f:
+            f.write(str(e))
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create avatar: {str(e)}")
+
+@router.get("/avatars/custom")
+async def get_custom_avatars(
+    workspace_id: str,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        wid = _parse_uuid(workspace_id, "workspace_id")
+        service = AssetService(session)
+        return await service.get_custom_avatars(workspace_id=wid)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch avatars: {str(e)}")
+
 # --- Brand Kits ---
 
 @router.get("/brand-kits", response_model=list[BrandKitResponse])

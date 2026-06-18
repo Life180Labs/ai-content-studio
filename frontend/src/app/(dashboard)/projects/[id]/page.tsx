@@ -7,20 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { PipelineTabs } from "@/components/pipeline/pipeline-tabs";
-import { CanvasForm } from "@/components/pipeline/canvas-form";
-import { ContentViewer } from "@/components/pipeline/content-viewer";
+import { ContentStudio } from "@/components/pipeline/content-studio";
 import { ScriptEditor } from "@/components/pipeline/script-editor";
 import { StoryboardEditor } from "@/components/pipeline/storyboard-editor";
-import { VoiceSelector } from "@/components/pipeline/voice-selector";
-import { AvatarSelector } from "@/components/pipeline/avatar-selector";
-import { VideoViewer } from "@/components/pipeline/video-viewer";
+import { VoiceAvatarSelector } from "@/components/pipeline/voice-avatar-selector";
+import { VideoReview } from "@/components/pipeline/video-review";
+import { DeliveryTab } from "@/components/pipeline/delivery-tab";
 import {
   usePipelineStatus,
   useGenerateContent,
   useGenerateScript,
   useGenerateStoryboard,
-  useGenerateVoice,
-  useGenerateAvatar,
+  useGenerateAssets,
+  useMergeVideos,
   useRegenerate,
   useSuggestKeyPoints,
 } from "@/hooks/use-pipeline";
@@ -37,7 +36,16 @@ import {
 
 import { api } from "@/lib/api";
 
-const STAGE_NAMES = ["canvas", "content", "script", "storyboard", "voice", "avatar", "video"];
+const STAGE_NAMES = [
+  "content-studio", // 0
+  "content-studio", // 1
+  "script",         // 2
+  "storyboard",     // 3
+  "voice-avatar",   // 4 (unused usually but mapped here)
+  "voice-avatar",   // 5
+  "video-review",   // 6
+  "delivery",       // 7
+];
 
 export default function ProjectDetailPage({
   params,
@@ -63,18 +71,18 @@ export default function ProjectDetailPage({
   const generateContent = useGenerateContent(workspaceId, projectId);
   const generateScript = useGenerateScript(workspaceId, projectId);
   const generateStoryboard = useGenerateStoryboard(workspaceId, projectId);
-  const generateVoice = useGenerateVoice(workspaceId, projectId);
-  const generateAvatar = useGenerateAvatar(workspaceId, projectId);
+  const generateAssets = useGenerateAssets(workspaceId, projectId);
+  const mergeVideos = useMergeVideos(workspaceId, projectId);
   const regenerate = useRegenerate(workspaceId, projectId);
   const suggestKeyPoints = useSuggestKeyPoints(workspaceId, projectId);
 
   const currentStage = status?.current_stage ?? 0;
-  const [activeTab, setActiveTab] = useState(STAGE_NAMES[currentStage] || "canvas");
+  const [activeTab, setActiveTab] = useState(STAGE_NAMES[currentStage] || "content-studio");
 
   // Keep tab synced with stage if user hasn't manually clicked another tab recently
   useEffect(() => {
     if (status) {
-      setActiveTab(STAGE_NAMES[status.current_stage] || "canvas");
+      setActiveTab(STAGE_NAMES[status.current_stage] || "content-studio");
     }
   }, [status?.current_stage]);
 
@@ -84,8 +92,8 @@ export default function ProjectDetailPage({
     generateContent.isPending ||
     generateScript.isPending ||
     generateStoryboard.isPending ||
-    generateVoice.isPending ||
-    generateAvatar.isPending ||
+    generateAssets.isPending ||
+    mergeVideos.isPending ||
     regenerate.isPending;
 
   // ── Handlers ─────────────────────────────────────────
@@ -93,7 +101,6 @@ export default function ProjectDetailPage({
   const handleGenerateContent = async (canvas: Parameters<typeof generateContent.mutateAsync>[0]) => {
     try {
       await generateContent.mutateAsync(canvas);
-      setActiveTab("content");
       toast.success("Content generated!");
     } catch (err: any) {
       toast.error(err?.detail || "Generation failed");
@@ -149,33 +156,53 @@ export default function ProjectDetailPage({
     }
   };
 
-  const handleGenerateVoice = async (voiceId: string) => {
+  const handleGenerateAssets = async (payload: { selected_voice_id: string; selected_avatar_id: string; use_custom_voice: boolean; aspect_ratio: string; video_quality: string }) => {
     try {
       const storyboardResult = status?.storyboard_result;
       if (!storyboardResult) {
         throw new Error("Storyboard data missing. Please save the storyboard first.");
       }
 
-      await generateVoice.mutateAsync({ 
-        selected_voice_id: voiceId,
+      await generateAssets.mutateAsync({ 
+        ...payload,
         storyboard_scenes: storyboardResult.scenes,
         video_frame_size: storyboardResult.video_frame_size || "16:9",
         video_quality: storyboardResult.video_quality || "1080p"
       });
-      setActiveTab("avatar");
-      toast.success("Voice generation started...");
+      setActiveTab("video-review");
+      toast.success("Asset generation started...");
     } catch (err: any) {
-      toast.error(err?.detail || err.message || "Voice generation failed");
+      toast.error(err?.detail || err.message || "Asset generation failed");
     }
   };
 
-  const handleGenerateAvatar = async (payload: { selected_avatar_id: string; use_custom_voice: boolean }) => {
+  const handleMergeVideos = async () => {
     try {
-      await generateAvatar.mutateAsync(payload);
-      setActiveTab("video");
-      toast.success("Video rendering started...");
+      await mergeVideos.mutateAsync();
+      setActiveTab("delivery");
+      toast.success("Video merge started!");
     } catch (err: any) {
-      toast.error(err?.detail || "Avatar generation failed");
+      toast.error(err?.detail || "Video merge failed");
+    }
+  };
+
+  const handleRegenerateScene = async (index: number) => {
+    try {
+      // Create a modified scenes array where ONLY the selected scene is unapproved
+      const storyboardResult = status?.storyboard_result;
+      if (!storyboardResult) return;
+      
+      const modifiedScenes = storyboardResult.scenes.map((scene, i) => ({
+        ...scene,
+        is_approved: i !== index // unapprove the target scene to regenerate it
+      }));
+      
+      // We need voice_id and avatar_id from previous generation
+      // But we can just direct user to voice-avatar tab
+      toast.info("Navigating to Voice & Avatar tab. Please re-generate assets.");
+      setActiveTab("voice-avatar");
+    } catch (err) {
+      toast.error("Failed to prepare scene for regeneration.");
     }
   };
 
@@ -234,33 +261,20 @@ export default function ProjectDetailPage({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto">
-        {effectiveTab === "canvas" && (
-          <CanvasForm
+        {effectiveTab === "content-studio" && (
+          <ContentStudio
             initialData={status?.canvas_data || undefined}
+            variations={status?.content_result?.variations || []}
             onGenerate={handleGenerateContent}
             onSuggestKeyPoints={handleSuggestKeyPoints}
-            isGenerating={generateContent.isPending}
-            isSuggesting={suggestKeyPoints.isPending}
-          />
-        )}
-
-        {effectiveTab === "content" && status?.content_result && (
-          <ContentViewer
-            variations={status.content_result.variations}
             onSelect={() => {}}
             onRegenerate={handleRegenerateContent}
             onProceed={handleGenerateScript}
+            isGenerating={generateContent.isPending}
+            isSuggesting={suggestKeyPoints.isPending}
             isRegenerating={regenerate.isPending}
+            hasContentResult={!!status?.content_result}
           />
-        )}
-
-        {effectiveTab === "content" && !status?.content_result && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">
-              Go to Canvas tab to generate content first.
-            </p>
-          </div>
         )}
 
         {effectiveTab === "script" && status?.script_result && (
@@ -297,8 +311,8 @@ export default function ProjectDetailPage({
             initialScenes={status?.storyboard_result?.scenes || []}
             initialVideoFrameSize={status?.storyboard_result?.video_frame_size || "16:9"}
             initialVideoQuality={status?.storyboard_result?.video_quality || "1080p"}
-            onProceed={() => setActiveTab("voice")}
-            isGeneratingVoice={generateVoice.isPending}
+            onProceed={() => setActiveTab("voice-avatar")}
+            isGeneratingVoice={false}
             runError={status?.runs?.find(r => r.stage === "storyboard" && r.status === "error")?.error_message}
             onRetry={() => {
               if (status?.script_result?.full_script) {
@@ -308,28 +322,31 @@ export default function ProjectDetailPage({
           />
         )}
 
-        {effectiveTab === "voice" && (
-          <VoiceSelector
+        {effectiveTab === "voice-avatar" && (
+          <VoiceAvatarSelector
             workspaceId={workspaceId}
             projectId={projectId}
-            onProceed={handleGenerateVoice}
-            isGeneratingAvatar={generateAvatar.isPending}
+            onProceed={handleGenerateAssets}
+            isGeneratingAssets={generateAssets.isPending}
           />
         )}
 
-        {effectiveTab === "avatar" && (
-          <AvatarSelector
-            onProceed={handleGenerateAvatar}
-            isGeneratingVideo={generateAvatar.isPending}
-          />
-        )}
-
-        {effectiveTab === "video" && (
-          <VideoViewer
+        {effectiveTab === "video-review" && (
+          <VideoReview
             workspaceId={workspaceId}
             projectId={projectId}
             scenes={status?.storyboard_result?.scenes || []}
+            onMerge={handleMergeVideos}
+            onRegenerateScene={handleRegenerateScene}
+            isMerging={mergeVideos.isPending}
             runError={status?.runs?.find(r => r.stage === "video" && r.status === "error")?.error_message}
+          />
+        )}
+
+        {effectiveTab === "delivery" && (
+          <DeliveryTab
+            workspaceId={workspaceId}
+            projectId={projectId}
           />
         )}
       </div>

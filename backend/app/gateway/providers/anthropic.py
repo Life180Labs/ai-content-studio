@@ -35,7 +35,7 @@ class AnthropicProvider(AIProvider):
         model: str | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
         response_format: str | None = None,
     ) -> AIResponse:
         model = model or "claude-sonnet-4-20250514"
@@ -44,7 +44,7 @@ class AnthropicProvider(AIProvider):
         try:
             kwargs: dict = {
                 "model": model,
-                "max_tokens": max_tokens,
+                "max_tokens": max_tokens or 4096, # Anthropic requires max_tokens
                 "temperature": temperature,
                 "messages": [{"role": "user", "content": prompt}],
             }

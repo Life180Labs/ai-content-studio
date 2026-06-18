@@ -11,6 +11,8 @@ from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from app.models.brand_kit import BrandKit
+from app.models.avatar import AvatarAsset
+from app.models.digital_human import VoiceClone, AvatarClone, DigitalHuman
 
 __all__ = [
     "BaseModel",
@@ -25,5 +27,9 @@ __all__ = [
     "AIPreference",
     "PipelineRun",
     "BrandKit",
+    "AvatarAsset",
+    "VoiceClone",
+    "AvatarClone",
+    "DigitalHuman",
 ]
 

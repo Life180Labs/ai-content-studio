@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_id
@@ -24,8 +25,7 @@ from app.schemas.pipeline import (
     StoryboardSaveRequest,
     SceneRegenerateRequest,
     StoryboardScene,
-    VoiceGenerateRequest,
-    AvatarGenerateRequest,
+    VoiceAvatarGenerateRequest,
     VideoResult,
 )
 from app.services.pipeline import PipelineService
@@ -212,50 +212,29 @@ async def regenerate_storyboard_scene(
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-@router.post("/voice")
-async def generate_voice(
+@router.post("/assets")
+async def generate_assets(
     workspace_id: str,
     project_id: str,
-    data: VoiceGenerateRequest,
+    data: VoiceAvatarGenerateRequest,
     user_id=Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
-    """Start voice generation background task (Step 5)."""
+    """Start voice and avatar generation background task (Step 5)."""
     pid = _parse_uuid(project_id, "project_id")
     wid = _parse_uuid(workspace_id, "workspace_id")
     try:
         service = PipelineService(session)
-        return await service.start_voice(
+        return await service.start_assets(
             user_id=user_id,
             workspace_id=wid,
             project_id=pid,
             voice_id=data.selected_voice_id,
+            avatar_id=data.selected_avatar_id,
+            use_custom_voice=data.use_custom_voice,
             storyboard_scenes=data.storyboard_scenes,
             video_frame_size=data.video_frame_size,
             video_quality=data.video_quality,
-        )
-    except AIProviderError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-@router.post("/avatar")
-async def generate_avatar(
-    workspace_id: str,
-    project_id: str,
-    data: AvatarGenerateRequest,
-    user_id=Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db),
-):
-    """Start avatar generation background task (Step 6)."""
-    pid = _parse_uuid(project_id, "project_id")
-    wid = _parse_uuid(workspace_id, "workspace_id")
-    try:
-        service = PipelineService(session)
-        return await service.start_avatar(
-            user_id=user_id,
-            workspace_id=wid,
-            project_id=pid,
-            avatar_id=data.selected_avatar_id,
-            use_custom_voice=data.use_custom_voice,
         )
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -328,3 +307,37 @@ async def clone_voice(
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clone voice: {str(e)}")
+
+@router.post("/merge")
+async def merge_scene_videos(
+    workspace_id: str,
+    project_id: str,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Merge completed scene videos into a final video."""
+    pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
+    try:
+        service = PipelineService(session)
+        result = await service.merge_scene_videos(user_id=user_id, workspace_id=wid, project_id=pid)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to merge videos: {str(e)}")
+
+@router.get("/package")
+async def get_project_package(
+    workspace_id: str,
+    project_id: str,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Download the final zipped project package."""
+    pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
+    try:
+        service = PipelineService(session)
+        zip_path = await service.generate_project_package(user_id=user_id, workspace_id=wid, project_id=pid)
+        return FileResponse(zip_path, media_type='application/zip', filename=f"{project_id}_package.zip")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate package: {str(e)}")

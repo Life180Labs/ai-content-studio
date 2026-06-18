@@ -58,7 +58,7 @@ export function ScriptEditor({
   return (
     <div className="space-y-6 p-6 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">Video Script</h2>
           <div className="flex items-center gap-3 mt-1">

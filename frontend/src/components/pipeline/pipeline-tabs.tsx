@@ -4,13 +4,12 @@ import { cn } from "@/lib/utils";
 import { Check, Lock, Loader2 } from "lucide-react";
 
 const STAGES = [
-  { key: "canvas", label: "Canvas", index: 0 },
-  { key: "content", label: "Content", index: 1 },
-  { key: "script", label: "Script", index: 2 },
-  { key: "storyboard", label: "Storyboard", index: 3 },
-  { key: "voice", label: "Voice", index: 4 },
-  { key: "avatar", label: "Avatar", index: 5 },
-  { key: "video", label: "Video", index: 6 },
+  { key: "content-studio", label: "Content Studio", minAccessible: 0, minCompleted: 2 },
+  { key: "script", label: "Script", minAccessible: 2, minCompleted: 3 },
+  { key: "storyboard", label: "Storyboard", minAccessible: 3, minCompleted: 5 },
+  { key: "voice-avatar", label: "Voice & Avatar", minAccessible: 3, minCompleted: 6 },
+  { key: "video-review", label: "Video Review", minAccessible: 6, minCompleted: 7 },
+  { key: "delivery", label: "Delivery", minAccessible: 7, minCompleted: 8 },
 ];
 
 interface PipelineTabsProps {
@@ -27,19 +26,24 @@ export function PipelineTabs({
   isGenerating,
 }: PipelineTabsProps) {
   return (
-    <div className="border-b border-border">
-      <nav className="flex gap-0 overflow-x-auto px-6" aria-label="Pipeline stages">
-        {STAGES.map((stage) => {
+    <div className="border-b border-border w-full">
+      <nav 
+        className="flex gap-0 overflow-x-auto px-2 sm:px-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']" 
+        aria-label="Pipeline stages"
+      >
+        {STAGES.map((stage, i) => {
           const isActive = activeTab === stage.key;
-          const isCompleted = stage.index < currentStage;
-          const isAccessible = stage.index <= currentStage;
+          const isCompleted = currentStage >= stage.minCompleted;
+          // The user specifically requested unrestricted tab navigation for completed projects to review inputs.
+          // Therefore, if ANY later stage is accessible, all earlier stages are accessible.
+          const isAccessible = currentStage >= stage.minAccessible;
           return (
             <button
               key={stage.key}
               onClick={() => isAccessible && onTabChange(stage.key)}
               disabled={!isAccessible}
               className={cn(
-                "relative flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-all whitespace-nowrap",
+                "relative flex items-center gap-2 px-3 sm:px-4 py-3.5 text-sm font-medium transition-all whitespace-nowrap shrink-0",
                 "border-b-2 -mb-px",
                 isActive
                   ? "border-primary text-primary"
@@ -64,11 +68,12 @@ export function PipelineTabs({
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : isCompleted ? (
                   <Check className="h-3.5 w-3.5" />
-                ) : (
-                  stage.index + 1
-                )}
+                  ) : (
+                    i + 1
+                  )}
               </span>
-              {stage.label}
+              <span className="hidden sm:inline">{stage.label}</span>
+              <span className="sm:hidden">{isActive || isCompleted ? stage.label : ""}</span>
             </button>
           );
         })}

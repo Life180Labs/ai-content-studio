@@ -47,6 +47,7 @@ STAGE_MAP = {
     "voice": 4,
     "avatar": 5,
     "video": 6,
+    "delivery": 7,
 }
 
 
@@ -700,16 +701,20 @@ Keep the visual prompt descriptive and cinematic."""
             logger.error("regenerate_scene_error", error=str(e), content=response.content)
             raise AIProviderError("Failed to parse regenerated scene. Please try again.")
 
-    async def start_voice(
-        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, voice_id: str, 
+    async def start_assets(
+        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, 
+        voice_id: str, avatar_id: str, use_custom_voice: bool = True,
         storyboard_scenes: list[StoryboardScene] | None = None,
         video_frame_size: str = "16:9",
         video_quality: str = "1080p"
     ) -> dict:
-        """Trigger Celery task to run LangGraph for voice generation."""
-        from app.workflow.tasks import start_voice_generation
+        """Trigger Celery task to run LangGraph for voice and avatar generation."""
+        from app.workflow.tasks import start_assets_generation
         project = await self._get_project(project_id, workspace_id)
-        project.current_stage = STAGE_MAP["voice"]
+        # Skip stage 4 ("voice") and go straight to stage 5 ("video") or map it to a new combined stage
+        # The user's new tab mapping treats Video Review as stage 6, so Voice & Avatar can just be stage 4/5. 
+        # We'll set it to STAGE_MAP["avatar"] since it encompasses both.
+        project.current_stage = STAGE_MAP["avatar"]
         
         # Save the confirmed storyboard edits to the run history
         if storyboard_scenes:
@@ -731,19 +736,10 @@ Keep the visual prompt descriptive and cinematic."""
         scenes_dicts = [s.model_dump() for s in storyboard_scenes] if storyboard_scenes else None
         video_settings = {"frame_size": video_frame_size, "quality": video_quality}
 
-        task = start_voice_generation.delay(str(project_id), str(user_id), voice_id, scenes_dicts, video_settings)
-        return {"task_id": task.id, "status": "processing"}
-
-    async def start_avatar(
-        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, avatar_id: str, use_custom_voice: bool = True
-    ) -> dict:
-        """Trigger Celery task to run LangGraph for avatar generation."""
-        from app.workflow.tasks import start_avatar_generation
-        project = await self._get_project(project_id, workspace_id)
-        project.current_stage = STAGE_MAP["video"]
-        await self.session.commit()
-        
-        task = start_avatar_generation.delay(str(project_id), str(user_id), avatar_id, use_custom_voice)
+        task = start_assets_generation.delay(
+            str(project_id), str(user_id), voice_id, avatar_id, 
+            use_custom_voice, scenes_dicts, video_settings
+        )
         return {"task_id": task.id, "status": "processing"}
 
     async def check_video_status(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID) -> VideoResult | None:
@@ -838,3 +834,96 @@ Keep the visual prompt descriptive and cinematic."""
         from app.gateway.providers.elevenlabs import ElevenLabsProvider
         provider = ElevenLabsProvider(api_key=el_key)
         return await provider.clone_voice(name, description, file_bytes, filename)
+
+    async def merge_scene_videos(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID) -> dict:
+        """Download all scene videos from HeyGen and merge them using moviepy."""
+        import os
+        import httpx
+        from moviepy import VideoFileClip, concatenate_videoclips
+        import asyncio
+
+        project = await self._get_project(project_id, workspace_id)
+        video_result = await self.check_video_status(user_id, workspace_id, project_id)
+        
+        if not video_result or not video_result.videos:
+            raise ValueError("No videos found to merge.")
+
+        os.makedirs("storage/video", exist_ok=True)
+        downloaded_paths = []
+
+        async with httpx.AsyncClient() as client:
+            for idx in sorted(video_result.videos.keys(), key=lambda x: int(x)):
+                status_info = video_result.videos[idx]
+                if status_info.status != "completed" or not status_info.video_url:
+                    raise ValueError(f"Video for scene {idx} is not completed or missing URL.")
+                
+                out_path = f"storage/video/{project_id}_scene_{idx}.mp4"
+                if not os.path.exists(out_path):
+                    resp = await client.get(status_info.video_url, timeout=60.0)
+                    resp.raise_for_status()
+                    with open(out_path, "wb") as f:
+                        f.write(resp.content)
+                downloaded_paths.append(out_path)
+
+        final_path = f"storage/video/{project_id}_final.mp4"
+        
+        # Run moviepy merge in a thread so it doesn't block the async event loop
+        def _merge_videos(paths, out_file):
+            clips = []
+            try:
+                clips = [VideoFileClip(p) for p in paths]
+                final_clip = concatenate_videoclips(clips, method="compose")
+                final_clip.write_videofile(out_file, codec="libx264", audio_codec="aac")
+            finally:
+                for c in clips:
+                    try:
+                        c.close()
+                    except:
+                        pass
+                        
+        await asyncio.to_thread(_merge_videos, downloaded_paths, final_path)
+
+        project.current_stage = STAGE_MAP["delivery"]
+        await self.session.commit()
+        return {"status": "success", "file_path": final_path}
+
+    async def generate_project_package(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID) -> str:
+        """Generate a ZIP file containing the script, storyboard, audio, and final video."""
+        import os
+        import zipfile
+        import json
+        
+        project = await self._get_project(project_id, workspace_id)
+        
+        # Fetch storyboard
+        stmt = select(PipelineRun).where(PipelineRun.project_id == project_id, PipelineRun.stage == "storyboard", PipelineRun.status == "success").order_by(PipelineRun.created_at.desc()).limit(1)
+        res = await self.session.execute(stmt)
+        storyboard_run = res.scalar_one_or_none()
+        
+        os.makedirs("storage/packages", exist_ok=True)
+        zip_path = f"storage/packages/{project_id}_package.zip"
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            if storyboard_run and storyboard_run.output_data:
+                # Write script
+                if storyboard_run.input_data and "script" in storyboard_run.input_data:
+                    zipf.writestr("script.txt", storyboard_run.input_data["script"])
+                
+                # Write storyboard JSON
+                zipf.writestr("storyboard.json", json.dumps(storyboard_run.output_data.get("scenes", []), indent=2))
+                
+            # Add audio files if they exist
+            audio_dir = "storage/audio"
+            if os.path.exists(audio_dir):
+                for f in os.listdir(audio_dir):
+                    if f.startswith(str(project_id)):
+                        zipf.write(os.path.join(audio_dir, f), arcname=f"audio/{f}")
+                        
+            # Add video files if they exist
+            video_dir = "storage/video"
+            if os.path.exists(video_dir):
+                final_vid = f"{project_id}_final.mp4"
+                if os.path.exists(os.path.join(video_dir, final_vid)):
+                    zipf.write(os.path.join(video_dir, final_vid), arcname=f"video/final_video.mp4")
+                    
+        return zip_path

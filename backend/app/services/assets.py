@@ -8,19 +8,21 @@ from app.models.brand_kit import BrandKit
 from app.schemas.brand_kit import BrandKitCreate, BrandKitUpdate
 from app.repositories.ai_preference import AIPreferenceRepository
 from app.services.ai_preference import AIPreferenceService
+from app.models.avatar import AvatarAsset
+from app.schemas.assets import AvatarAssetResponse
 
 class AssetService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
     async def _get_gateway(self, user_id: uuid.UUID) -> AIGateway:
-        pref_repo = AIPreferenceRepository(self.session)
-        pref_service = AIPreferenceService(pref_repo)
-        preferences = await pref_service.get_preferences(user_id)
-        gateway = AIGateway()
-        if preferences:
-            for k, v in preferences.provider_keys.items():
-                gateway.add_provider_key(k, v)
+        pref_service = AIPreferenceService(self.session)
+        pref_model = await pref_service.repo.get_by_user_id(user_id)
+        keys = {}
+        if pref_model:
+            keys = pref_service.get_decrypted_keys(pref_model)
+        
+        gateway = AIGateway(provider_keys=keys)
         return gateway
 
     async def get_voices(self, user_id: uuid.UUID) -> list[dict]:
@@ -49,6 +51,107 @@ class AssetService:
         from app.gateway.providers.heygen import HeyGenProvider
         provider = HeyGenProvider(api_key=heygen_key)
         return await provider.get_avatars()
+
+    async def create_custom_avatar(
+        self,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        name: str,
+        avatar_type: str,
+        prompt: str | None = None,
+        file_bytes: bytes | None = None,
+        content_type: str = "image/png"
+    ) -> dict:
+        gateway = await self._get_gateway(user_id)
+        heygen_key = gateway.provider_keys.get("heygen")
+        if not heygen_key:
+            raise AIProviderError("HeyGen API key not configured.", provider="heygen", model="")
+        
+        from app.gateway.providers.heygen import HeyGenProvider
+        provider = HeyGenProvider(api_key=heygen_key)
+        
+        if avatar_type == "photo":
+            if not file_bytes:
+                raise ValueError("Photo avatar requires an image file.")
+            asset_id = await provider.upload_asset(file_bytes, content_type)
+            payload = {"type": "photo", "name": name, "file": {"type": "asset_id", "asset_id": asset_id}}
+            resp = await provider.create_custom_avatar(payload)
+            item = resp.get("avatar_item", {})
+            group = resp.get("avatar_group", {})
+            
+            avatar = AvatarAsset(
+                workspace_id=workspace_id,
+                name=name,
+                avatar_type="photo",
+                heygen_avatar_id=item.get("id"),
+                heygen_group_id=group.get("id"),
+                preview_image_url=item.get("preview_image_url"),
+                status="ready"
+            )
+            self.session.add(avatar)
+            await self.session.commit()
+            await self.session.refresh(avatar)
+            return {"avatar": AvatarAssetResponse.model_validate(avatar).model_dump()}
+            
+        elif avatar_type == "digital_twin":
+            if not file_bytes:
+                raise ValueError("Digital Twin requires a video file.")
+            asset_id = await provider.upload_asset(file_bytes, content_type)
+            payload = {"type": "digital_twin", "name": name, "file": {"type": "asset_id", "asset_id": asset_id}}
+            resp = await provider.create_custom_avatar(payload)
+            group = resp.get("avatar_group", {})
+            group_id = group.get("id")
+            
+            avatar = AvatarAsset(
+                workspace_id=workspace_id,
+                name=name,
+                avatar_type="digital_twin",
+                heygen_group_id=group_id,
+                status="pending_consent"
+            )
+            self.session.add(avatar)
+            await self.session.commit()
+            await self.session.refresh(avatar)
+            
+            consent_url = await provider.generate_consent_url(group_id, "https://ai-content-studio.local/consent-done")
+            return {
+                "avatar": AvatarAssetResponse.model_validate(avatar).model_dump(),
+                "consent_url": consent_url
+            }
+            
+        elif avatar_type == "prompt":
+            if not prompt:
+                raise ValueError("Prompt-to-Avatar requires a text prompt.")
+            payload = {"type": "prompt", "name": name, "prompt": prompt}
+            resp = await provider.create_custom_avatar(payload)
+            item = resp.get("avatar_item", {})
+            group = resp.get("avatar_group", {})
+            
+            avatar = AvatarAsset(
+                workspace_id=workspace_id,
+                name=name,
+                avatar_type="prompt",
+                heygen_avatar_id=item.get("id"),
+                heygen_group_id=group.get("id"),
+                preview_image_url=item.get("preview_image_url"),
+                status="ready"
+            )
+            self.session.add(avatar)
+            await self.session.commit()
+            await self.session.refresh(avatar)
+            return {"avatar": AvatarAssetResponse.model_validate(avatar).model_dump()}
+            
+        raise ValueError("Invalid avatar type.")
+
+    async def get_custom_avatars(self, workspace_id: uuid.UUID) -> list[dict]:
+        result = await self.session.execute(
+            select(AvatarAsset).where(
+                AvatarAsset.workspace_id == workspace_id,
+                AvatarAsset.deleted_at.is_(None)
+            ).order_by(AvatarAsset.created_at.desc())
+        )
+        avatars = result.scalars().all()
+        return [AvatarAssetResponse.model_validate(a).model_dump() for a in avatars]
 
     # --- Brand Kits ---
     async def get_brand_kits(self, workspace_id: uuid.UUID) -> list[BrandKit]:

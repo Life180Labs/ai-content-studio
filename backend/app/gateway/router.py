@@ -113,7 +113,7 @@ class AIGateway:
         system_prompt: str | None = None,
         task: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
         response_format: str | None = None,
     ) -> AIResponse:
         """Generate text using the configured routing strategy.

@@ -1,0 +1,5 @@
+python-multipart>=0.0.9
+google-genai>=0.3.0
+json-repair>=0.35.0
+moviepy>=2.2.1
+imageio-ffmpeg>=0.5.1

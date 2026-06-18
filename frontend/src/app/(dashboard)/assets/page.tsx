@@ -5,7 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VoiceGrid } from "@/components/assets/voice-grid";
 import { AvatarGrid } from "@/components/assets/avatar-grid";
 import { BrandKitsManager } from "@/components/assets/brand-kits-manager";
-import { Image, Mic, Palette } from "lucide-react";
+import DigitalHumansPage from "./digital-humans/page";
+import { Image, Mic, Palette, Users } from "lucide-react";
 
 import { useWorkspaces } from "@/hooks/use-projects";
 
@@ -37,6 +38,10 @@ export default function AssetsPage() {
               <Palette className="h-4 w-4" />
               Brand Kits
             </TabsTrigger>
+            <TabsTrigger value="digital-humans" className="gap-2 px-6">
+              <Users className="h-4 w-4" />
+              Digital Humans
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="voices" className="m-0">
@@ -49,6 +54,10 @@ export default function AssetsPage() {
 
           <TabsContent value="brand-kits" className="m-0">
             <BrandKitsManager workspaceId={workspaceId} />
+          </TabsContent>
+
+          <TabsContent value="digital-humans" className="m-0">
+            <DigitalHumansPage />
           </TabsContent>
         </Tabs>
       </div>

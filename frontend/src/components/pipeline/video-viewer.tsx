@@ -53,9 +53,12 @@ export function VideoViewer({ workspaceId, projectId, scenes, runError }: VideoV
         </div>
         
         {runError && (
-          <div className="bg-destructive/10 text-destructive text-sm px-4 py-2 rounded-md flex items-center gap-2 max-w-md">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span className="line-clamp-2">{runError}</span>
+          <div className="bg-destructive/10 border-l-4 border-destructive text-destructive text-sm px-4 py-3 rounded-md flex items-start gap-3 w-full">
+            <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold mb-1">Generation Failed</p>
+              <span className="break-all">{runError}</span>
+            </div>
           </div>
         )}
 
@@ -67,8 +70,17 @@ export function VideoViewer({ workspaceId, projectId, scenes, runError }: VideoV
         )}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {scenes.map((scene, index) => {
+      {scenes.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center border rounded-lg border-dashed">
+          <Video className="h-8 w-8 text-muted-foreground mb-4 opacity-50" />
+          <h3 className="text-lg font-semibold">No scenes available</h3>
+          <p className="text-muted-foreground max-w-md mt-2">
+            Please go back to the Storyboard tab to generate and approve scenes before rendering the final video.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
+          {scenes.map((scene, index) => {
           const vStatus = videos[index.toString()];
           const status = vStatus?.status || "pending";
           const videoUrl = vStatus?.video_url;
@@ -114,8 +126,9 @@ export function VideoViewer({ workspaceId, projectId, scenes, runError }: VideoV
               </CardContent>
             </Card>
           );
-        })}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -62,7 +62,7 @@ yarn-error.log*
 *.sqlite3
 
 # Documentation / local docs folder
-docs/
+docs/plan.md
 
 # Scratch and test files
 scratch_*.py

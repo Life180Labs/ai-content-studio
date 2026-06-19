@@ -1,0 +1,64 @@
+{
+  "version": 3,
+  "services": {
+    "frontend": {
+      "name": "Next.js Frontend",
+      "source": {
+        "rootDirectory": "/frontend"
+      },
+      "build": {
+        "builder": "NIXPACKS",
+        "buildCommand": "npm run build"
+      },
+      "deploy": {
+        "startCommand": "npm start"
+      },
+      "env": {
+        "NEXT_PUBLIC_API_URL": "${{ backend.RAILWAY_PUBLIC_DOMAIN }}"
+      }
+    },
+    "backend": {
+      "name": "FastAPI Backend",
+      "source": {
+        "rootDirectory": "/backend"
+      },
+      "build": {
+        "builder": "NIXPACKS"
+      },
+      "deploy": {
+        "startCommand": "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+      },
+      "env": {
+        "DATABASE_URL": "${{ postgres.DATABASE_URL }}",
+        "REDIS_URL": "${{ redis.REDIS_URL }}",
+        "ENVIRONMENT": "production",
+        "CORS_ORIGINS": "${{ frontend.RAILWAY_PUBLIC_DOMAIN }}"
+      }
+    },
+    "celery-worker": {
+      "name": "Celery Worker",
+      "source": {
+        "rootDirectory": "/backend"
+      },
+      "build": {
+        "builder": "NIXPACKS"
+      },
+      "deploy": {
+        "startCommand": "celery -A app.worker.celery_app worker --loglevel=info"
+      },
+      "env": {
+        "DATABASE_URL": "${{ postgres.DATABASE_URL }}",
+        "REDIS_URL": "${{ redis.REDIS_URL }}",
+        "ENVIRONMENT": "production"
+      }
+    },
+    "postgres": {
+      "name": "PostgreSQL Database",
+      "image": "postgres:16"
+    },
+    "redis": {
+      "name": "Redis Cache",
+      "image": "redis:7-alpine"
+    }
+  }
+}

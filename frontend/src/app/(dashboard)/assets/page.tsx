@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VoiceGrid } from "@/components/assets/voice-grid";
 import { AvatarGrid } from "@/components/assets/avatar-grid";
 import { BrandKitsManager } from "@/components/assets/brand-kits-manager";
-import DigitalHumansPage from "./digital-humans/page";
+import { DigitalHumansGrid } from "@/components/assets/digital-humans-grid";
 import { Image, Mic, Palette, Users } from "lucide-react";
 
 import { useWorkspaces } from "@/hooks/use-projects";
@@ -57,7 +57,7 @@ export default function AssetsPage() {
           </TabsContent>
 
           <TabsContent value="digital-humans" className="m-0">
-            <DigitalHumansPage />
+            <DigitalHumansGrid workspaceId={workspaceId} />
           </TabsContent>
         </Tabs>
       </div>

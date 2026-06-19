@@ -1,18 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
-  ArrowRight,
   Clock,
   FileText,
   Loader2,
-  Lock,
   RefreshCcw,
   Eye,
 } from "lucide-react";
@@ -26,6 +23,9 @@ interface ScriptEditorProps {
   wordCount: number;
   onRegenerate: (additionalContext: string) => void;
   isRegenerating: boolean;
+  onSectionsChange?: (sections: ScriptSection[]) => void;
+  onRegenerateSection?: (index: number, context: string) => void;
+  isRegeneratingSection?: number | null;
 }
 
 const SECTION_COLORS: Record<string, string> = {
@@ -44,10 +44,15 @@ export function ScriptEditor({
   wordCount,
   onRegenerate,
   isRegenerating,
+  onSectionsChange,
+  onRegenerateSection,
+  isRegeneratingSection,
 }: ScriptEditorProps) {
   const [showImprove, setShowImprove] = useState(false);
   const [improvementPrompt, setImprovementPrompt] = useState("");
   const [viewMode, setViewMode] = useState<"sections" | "full">("sections");
+  const [sectionPrompts, setSectionPrompts] = useState<Record<number, string>>({});
+  const [expandedSectionPrompt, setExpandedSectionPrompt] = useState<Record<number, boolean>>({});
 
   const handleRegenerate = () => {
     onRegenerate(improvementPrompt);
@@ -55,8 +60,24 @@ export function ScriptEditor({
     setShowImprove(false);
   };
 
+  const handleSectionTextChange = (index: number, text: string) => {
+    if (!onSectionsChange) return;
+    onSectionsChange(sections.map((s, i) => (i === index ? { ...s, text } : s)));
+  };
+
+  const handleSectionRegenerate = (index: number) => {
+    if (!onRegenerateSection) return;
+    onRegenerateSection(index, sectionPrompts[index] || "Improve clarity and engagement.");
+    setSectionPrompts((prev) => ({ ...prev, [index]: "" }));
+    setExpandedSectionPrompt((prev) => ({ ...prev, [index]: false }));
+  };
+
+  const computedFullScript = sections.length > 0
+    ? sections.map((s) => `[${s.section_type.toUpperCase()}]\n${s.text}`).join("\n\n")
+    : fullScript;
+
   return (
-    <div className="space-y-6 p-6 max-w-4xl mx-auto">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -112,7 +133,7 @@ export function ScriptEditor({
         </div>
       </div>
 
-      {/* Improvement prompt */}
+      {/* Whole-script regeneration prompt */}
       {showImprove && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="pt-4 space-y-3">
@@ -152,6 +173,7 @@ export function ScriptEditor({
             const colorClass =
               SECTION_COLORS[section.section_type] ||
               "bg-muted text-foreground border-border";
+            const isRegenThisSection = isRegeneratingSection === index;
 
             return (
               <Card key={index} className="border-border/50">
@@ -171,21 +193,87 @@ export function ScriptEditor({
                         </span>
                       )}
                     </div>
+                    {onRegenerateSection && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() =>
+                          setExpandedSectionPrompt((prev) => ({
+                            ...prev,
+                            [index]: !prev[index],
+                          }))
+                        }
+                        disabled={isRegenThisSection}
+                      >
+                        {isRegenThisSection ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCcw className="h-3 w-3" />
+                        )}
+                        Regenerate
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {section.text}
-                  </p>
+                  <Textarea
+                    value={section.text}
+                    onChange={(e) => handleSectionTextChange(index, e.target.value)}
+                    rows={Math.max(4, Math.ceil(section.text.length / 80))}
+                    className="text-sm leading-relaxed resize-none"
+                    placeholder="Section text..."
+                    disabled={isRegenThisSection}
+                  />
+
+                  {/* Per-section AI regeneration */}
+                  {expandedSectionPrompt[index] && (
+                    <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 space-y-2">
+                      <Label className="text-xs">How should this section be improved?</Label>
+                      <Textarea
+                        placeholder="e.g., Make it more concise, add stronger emotion..."
+                        value={sectionPrompts[index] || ""}
+                        onChange={(e) =>
+                          setSectionPrompts((prev) => ({ ...prev, [index]: e.target.value }))
+                        }
+                        rows={2}
+                        className="text-xs"
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() =>
+                            setExpandedSectionPrompt((prev) => ({ ...prev, [index]: false }))
+                          }
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 gap-1 text-xs"
+                          onClick={() => handleSectionRegenerate(index)}
+                          disabled={isRegenThisSection}
+                        >
+                          {isRegenThisSection ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RefreshCcw className="h-3 w-3" />
+                          )}
+                          Regenerate Section
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   {section.visual_notes && (
                     <div className="rounded-lg bg-muted/50 p-3 border border-border/50">
                       <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
                         <Eye className="h-3 w-3" />
                         Visual Notes
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {section.visual_notes}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{section.visual_notes}</p>
                     </div>
                   )}
                 </CardContent>
@@ -194,17 +282,15 @@ export function ScriptEditor({
           })}
         </div>
       ) : (
-        /* Full Script View */
+        /* Full Script View — computed from locally-edited sections */
         <Card className="border-border/50">
           <CardContent className="pt-6">
             <pre className="text-sm leading-relaxed whitespace-pre-wrap font-sans">
-              {fullScript}
+              {computedFullScript}
             </pre>
           </CardContent>
         </Card>
       )}
-
-
     </div>
   );
 }

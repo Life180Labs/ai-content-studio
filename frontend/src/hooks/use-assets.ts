@@ -6,8 +6,10 @@ export type Avatar = {
   id: string;
   name: string;
   gender: string;
-  preview_image_url: string;
-  type: string;
+  preview_image_url: string | null;
+  type: "custom" | "public";
+  group_id: string | null;
+  look_description: string | null;
 };
 
 export interface CustomAvatar {
@@ -121,8 +123,7 @@ export function useGetDigitalHumans(workspaceId: string | null) {
   return useQuery<any[]>({
     queryKey: ["digital-humans", workspaceId],
     queryFn: async () => {
-      const { data } = await api.get<any[]>(`/api/v1/workspaces/${workspaceId}/digital-humans`);
-      return data;
+      return api.get<any[]>(`/api/v1/workspaces/${workspaceId}/digital-humans`);
     },
     enabled: !!workspaceId,
   });

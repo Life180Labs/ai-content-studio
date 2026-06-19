@@ -174,33 +174,90 @@ class HeyGenProvider(AIProvider):
             # Fallback to mock for testing if real upload fails
             return f"mock_asset_{int(time.time())}"
 
-    async def get_avatars(self) -> list[dict]:
-        """Fetch all available avatars (public and custom)."""
+    async def get_voices(self) -> list[dict]:
+        """Fetch available HeyGen voices (built-in + custom clones)."""
         import httpx
-        url = "https://api.heygen.com/v2/avatars"
-        headers = {
-            "x-api-key": self.api_key,
-            "Accept": "application/json"
-        }
+        url = "https://api.heygen.com/v2/voices"
+        headers = {"x-api-key": self.api_key, "Accept": "application/json"}
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, headers=headers, timeout=10.0)
                 response.raise_for_status()
                 data = response.json()
-                
-                # HeyGen v2 returns data.avatars list
-                avatars = data.get("data", {}).get("avatars", [])
-                
-                result = []
-                for avatar in avatars:
+                voices = data.get("data", {}).get("voices", [])
+                return [
+                    {
+                        "id": v.get("voice_id"),
+                        "name": v.get("name", "Unknown"),
+                        "category": "heygen",
+                        "labels": {
+                            "language": v.get("language", ""),
+                            "gender": v.get("gender", ""),
+                        },
+                        "preview_url": v.get("preview_audio") or None,
+                    }
+                    for v in voices
+                    if v.get("voice_id")
+                ]
+        except Exception as e:
+            logger.error("heygen_get_voices_error", error=str(e))
+            raise AIProviderError(
+                f"Failed to fetch HeyGen voices: {str(e)}",
+                provider=self.provider_name,
+                model="",
+            )
+
+    async def get_avatars(self) -> list[dict]:
+        """Fetch all available avatars (public and custom groups with all variants)."""
+        import httpx
+        url = "https://api.heygen.com/v2/avatars"
+        headers = {"x-api-key": self.api_key, "Accept": "application/json"}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, timeout=15.0)
+                response.raise_for_status()
+                data = response.json()
+
+            payload = data.get("data", {})
+            raw_avatars = payload.get("avatars", [])
+            avatar_groups = payload.get("avatar_groups", [])
+
+            result: list[dict] = []
+
+            # Flat public / individual custom avatars
+            for v in raw_avatars:
+                if not v.get("avatar_id"):
+                    continue
+                result.append({
+                    "id": v["avatar_id"],
+                    "name": v.get("avatar_name", "Unknown"),
+                    "gender": v.get("gender", ""),
+                    "preview_image_url": v.get("preview_image_url"),
+                    "type": "custom" if v.get("is_custom") else "public",
+                    "group_id": None,
+                    "look_description": None,
+                })
+
+            # Avatar groups — each group is a Digital Twin / Photo avatar with multiple looks
+            for group in avatar_groups:
+                group_name = group.get("name", "Custom Avatar")
+                group_id = group.get("id")
+                for variant in group.get("avatars", []):
+                    avatar_id = variant.get("avatar_id")
+                    if not avatar_id:
+                        continue
+                    look = variant.get("look_description") or variant.get("style") or ""
                     result.append({
-                        "id": avatar.get("avatar_id"),
-                        "name": avatar.get("avatar_name"),
-                        "gender": avatar.get("gender", "Unknown"),
-                        "preview_image_url": avatar.get("preview_image_url"),
-                        "type": "custom" if avatar.get("is_custom") else "public",
+                        "id": avatar_id,
+                        "name": group_name,
+                        "gender": variant.get("gender", ""),
+                        "preview_image_url": variant.get("preview_image_url"),
+                        "type": "custom",
+                        "group_id": group_id,
+                        "look_description": look or None,
                     })
-                return result
+
+            return result
         except Exception as e:
             logger.error("heygen_get_avatars_error", error=str(e))
             raise AIProviderError(f"HeyGen API Error: {str(e)}", provider=self.provider_name, model="") from e
@@ -307,6 +364,37 @@ class HeyGenProvider(AIProvider):
             import time
             return {"avatar_id": f"mock_heygen_avatar_{int(time.time())}"}
             raise AIProviderError(f"Failed to create avatar: {str(e)}", provider=self.provider_name, model="v3-avatars") from e
+
+    async def get_video_status(self, video_id: str) -> dict:
+        """Poll HeyGen for video generation status and URL."""
+        import httpx
+        url = "https://api.heygen.com/v1/video_status.get"
+        headers = {
+            "x-api-key": self.api_key,
+            "Accept": "application/json"
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url, headers=headers, params={"video_id": video_id}, timeout=10.0
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get("data", {})
+        except httpx.HTTPStatusError as e:
+            logger.error("heygen_video_status_error", status=e.response.status_code, text=e.response.text)
+            raise AIProviderError(
+                f"HeyGen status check failed: {e.response.status_code}",
+                provider=self.provider_name,
+                model="v1-video-status",
+            )
+        except Exception as e:
+            logger.error("heygen_video_status_unexpected_error", error=str(e))
+            raise AIProviderError(
+                f"Unexpected error checking video status: {str(e)}",
+                provider=self.provider_name,
+                model="v1-video-status",
+            )
 
     async def generate_consent_url(self, group_id: str, reroute_url: str) -> str:
         """Generate a consent URL for a Digital Twin avatar via v3 API."""

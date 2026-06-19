@@ -4,8 +4,6 @@ import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { PipelineTabs } from "@/components/pipeline/pipeline-tabs";
 import { ContentStudio } from "@/components/pipeline/content-studio";
 import { ScriptEditor } from "@/components/pipeline/script-editor";
@@ -22,16 +20,17 @@ import {
   useMergeVideos,
   useRegenerate,
   useSuggestKeyPoints,
+  useRegenerateScriptSection,
 } from "@/hooks/use-pipeline";
+import type { ScriptSection } from "@/hooks/use-pipeline";
 import { toast } from "sonner";
 import {
   ArrowLeft,
   DollarSign,
   Zap,
-  Clock,
   Loader2,
-  CheckCircle,
   ArrowRight,
+  FileText,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -56,6 +55,9 @@ export default function ProjectDetailPage({
   const router = useRouter();
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [selectedVariationIndex, setSelectedVariationIndex] = useState(0);
+  const [localSections, setLocalSections] = useState<ScriptSection[] | null>(null);
+  const [regeneratingSectionIndex, setRegeneratingSectionIndex] = useState<number | null>(null);
 
   useEffect(() => {
     // Fetch user's workspaces
@@ -75,16 +77,25 @@ export default function ProjectDetailPage({
   const mergeVideos = useMergeVideos(workspaceId, projectId);
   const regenerate = useRegenerate(workspaceId, projectId);
   const suggestKeyPoints = useSuggestKeyPoints(workspaceId, projectId);
+  const regenerateScriptSection = useRegenerateScriptSection(workspaceId, projectId);
 
   const currentStage = status?.current_stage ?? 0;
   const [activeTab, setActiveTab] = useState(STAGE_NAMES[currentStage] || "content-studio");
 
-  // Keep tab synced with stage if user hasn't manually clicked another tab recently
+  // Keep tab synced with stage
   useEffect(() => {
     if (status) {
       setActiveTab(STAGE_NAMES[status.current_stage] || "content-studio");
     }
   }, [status?.current_stage]);
+
+  // Sync local section edits when a new script result arrives from the server
+  const scriptSections = status?.script_result?.sections;
+  useEffect(() => {
+    if (scriptSections) {
+      setLocalSections(scriptSections);
+    }
+  }, [scriptSections]);
 
   const effectiveTab = activeTab;
 
@@ -120,7 +131,7 @@ export default function ProjectDetailPage({
 
   const handleGenerateScript = async () => {
     try {
-      await generateScript.mutateAsync({});
+      await generateScript.mutateAsync({ selected_variation_index: selectedVariationIndex });
       setActiveTab("script");
       toast.success("Script generated!");
     } catch (err: any) {
@@ -139,16 +150,43 @@ export default function ProjectDetailPage({
 
   const handleRegenerateScript = async (additionalContext: string) => {
     try {
-      await regenerate.mutateAsync({ stage: "script", additional_context: additionalContext });
+      await regenerate.mutateAsync({
+        stage: "script",
+        additional_context: additionalContext,
+        selected_variation_index: selectedVariationIndex,
+      });
       toast.success("Script regenerated!");
     } catch (err: any) {
       toast.error(err?.detail || "Regeneration failed");
     }
   };
 
-  const handleGenerateStoryboard = async (script: string) => {
+  const handleRegenerateSection = async (index: number, context: string) => {
+    if (!localSections) return;
+    setRegeneratingSectionIndex(index);
     try {
-      await generateStoryboard.mutateAsync({ script });
+      const updated = await regenerateScriptSection.mutateAsync({
+        section_index: index,
+        current_section: localSections[index],
+        additional_context: context,
+      });
+      setLocalSections((prev) =>
+        prev ? prev.map((s, i) => (i === index ? updated : s)) : prev
+      );
+      toast.success("Section regenerated!");
+    } catch (err: any) {
+      toast.error(err?.detail || "Section regeneration failed");
+    } finally {
+      setRegeneratingSectionIndex(null);
+    }
+  };
+
+  const handleGenerateStoryboard = async () => {
+    const activeScript = localSections
+      ? localSections.map((s) => `[${s.section_type.toUpperCase()}]\n${s.text}`).join("\n\n")
+      : status?.script_result?.full_script || "";
+    try {
+      await generateStoryboard.mutateAsync({ script: activeScript });
       setActiveTab("storyboard");
       toast.success("Storyboard generation started...");
     } catch (err: any) {
@@ -267,7 +305,7 @@ export default function ProjectDetailPage({
             variations={status?.content_result?.variations || []}
             onGenerate={handleGenerateContent}
             onSuggestKeyPoints={handleSuggestKeyPoints}
-            onSelect={() => {}}
+            onSelect={(index) => setSelectedVariationIndex(index)}
             onRegenerate={handleRegenerateContent}
             onProceed={handleGenerateScript}
             isGenerating={generateContent.isPending}
@@ -277,30 +315,53 @@ export default function ProjectDetailPage({
           />
         )}
 
-        {effectiveTab === "script" && status?.script_result && (
+        {effectiveTab === "script" && (
           <div className="max-w-4xl mx-auto p-6">
-            <ScriptEditor
-              sections={status.script_result.sections}
-              fullScript={status.script_result.full_script}
-              estimatedDuration={status.script_result.estimated_duration}
-              wordCount={status.script_result.word_count}
-              onRegenerate={handleRegenerateScript}
-              isRegenerating={regenerate.isPending}
-            />
-            <div className="flex justify-end pt-4">
-               <Button 
-                onClick={() => handleGenerateStoryboard(status.script_result!.full_script)}
-                size="lg" 
-                className="gap-2 min-w-[200px]"
-                disabled={generateStoryboard.isPending}
-               >
-                 {generateStoryboard.isPending ? (
-                   <><Loader2 className="h-4 w-4 animate-spin"/> Generating...</>
-                 ) : (
-                   <>Approve & Proceed to Storyboard <ArrowRight className="h-4 w-4" /></>
-                 )}
-               </Button>
-            </div>
+            {status?.script_result ? (
+              <>
+                <ScriptEditor
+                  sections={localSections || status.script_result.sections}
+                  fullScript={status.script_result.full_script}
+                  estimatedDuration={status.script_result.estimated_duration}
+                  wordCount={status.script_result.word_count}
+                  onRegenerate={handleRegenerateScript}
+                  isRegenerating={regenerate.isPending}
+                  onSectionsChange={setLocalSections}
+                  onRegenerateSection={handleRegenerateSection}
+                  isRegeneratingSection={regeneratingSectionIndex}
+                />
+                <div className="flex justify-end pt-4">
+                  <Button
+                    onClick={handleGenerateStoryboard}
+                    size="lg"
+                    className="gap-2 min-w-[200px]"
+                    disabled={generateStoryboard.isPending}
+                  >
+                    {generateStoryboard.isPending ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</>
+                    ) : (
+                      <>Approve & Proceed to Storyboard <ArrowRight className="h-4 w-4" /></>
+                    )}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                {generateScript.isPending ? (
+                  <>
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                    <p className="text-muted-foreground">Generating script...</p>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-8 w-8 text-muted-foreground/40 mb-4" />
+                    <p className="text-muted-foreground">
+                      Select a content variation and click &ldquo;Approve &amp; Proceed to Script&rdquo; to generate your script.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -313,12 +374,8 @@ export default function ProjectDetailPage({
             initialVideoQuality={status?.storyboard_result?.video_quality || "1080p"}
             onProceed={() => setActiveTab("voice-avatar")}
             isGeneratingVoice={false}
-            runError={status?.runs?.find(r => r.stage === "storyboard" && r.status === "error")?.error_message}
-            onRetry={() => {
-              if (status?.script_result?.full_script) {
-                handleGenerateStoryboard(status.script_result.full_script);
-              }
-            }}
+            runError={status?.runs?.find(r => r.stage === "storyboard" && r.status === "error")?.error_message ?? undefined}
+            onRetry={handleGenerateStoryboard}
           />
         )}
 
@@ -339,7 +396,7 @@ export default function ProjectDetailPage({
             onMerge={handleMergeVideos}
             onRegenerateScene={handleRegenerateScene}
             isMerging={mergeVideos.isPending}
-            runError={status?.runs?.find(r => r.stage === "video" && r.status === "error")?.error_message}
+            runError={status?.runs?.find(r => r.stage === "video" && r.status === "error")?.error_message ?? undefined}
           />
         )}
 

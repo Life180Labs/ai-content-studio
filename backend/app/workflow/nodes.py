@@ -105,12 +105,20 @@ Return ONLY valid JSON with this structure:
 
 
 async def generate_assets(state: PipelineGraphState) -> dict:
-    """Node: Generate voice audio and avatar video for each scene sequentially."""
+    """Node: Generate avatar videos for each scene using HeyGen built-in TTS."""
     logger.info("node_start", node="generate_assets", project_id=state["project_id"])
-    
-    from app.gateway.providers.elevenlabs import ElevenLabsProvider
+
     from app.gateway.providers.heygen import HeyGenProvider
-    
+
+    keys = state.get("provider_keys", {})
+    hg_key = keys.get("heygen")
+
+    if not hg_key:
+        return {"error_message": "HeyGen API key is missing. Add it in Settings.", "current_node": "generate_assets"}
+
+    avatar_provider = HeyGenProvider(api_key=hg_key)
+
+    # Optional: image generation for scene backgrounds
     gateway = _get_gateway(state)
     default_provider_name = gateway.default_provider
     try:
@@ -118,108 +126,65 @@ async def generate_assets(state: PipelineGraphState) -> dict:
     except Exception:
         image_provider = None
 
-    keys = state.get("provider_keys", {})
-    el_key = keys.get("elevenlabs")
-    hg_key = keys.get("heygen")
-    
-    if not el_key:
-        return {"error_message": "ElevenLabs API key is missing. Add it in Settings.", "current_node": "generate_assets"}
-    if not hg_key:
-        return {"error_message": "HeyGen API key is missing. Add it in Settings.", "current_node": "generate_assets"}
-        
-    voice_provider = ElevenLabsProvider(api_key=el_key)
-    avatar_provider = HeyGenProvider(api_key=hg_key)
-    
     scenes = state.get("storyboard_scenes", [])
-    voice_id = state.get("selected_voice_id", "Rachel")
+    voice_id = state.get("selected_voice_id") or ""
     avatar_id = state.get("selected_avatar_id") or "Anna_public_3_20240108"
-    use_custom_voice = state.get("use_custom_voice", True)
-    
+
     aspect_ratio = state.get("aspect_ratio", "16:9")
     video_quality = state.get("video_quality", "production")
-    
+
     if aspect_ratio == "9:16":
         dimension = {"width": 1080, "height": 1920}
     elif aspect_ratio == "1:1":
         dimension = {"width": 1080, "height": 1080}
     else:
         dimension = {"width": 1920, "height": 1080}
-        
-    test_mode = (video_quality == "draft")
-    
-    audio_paths = state.get("voice_audio_paths", {})
+
+    test_mode = video_quality == "draft"
+
     video_ids = state.get("avatar_video_ids", {})
-    
+
     try:
-        import os
-        os.makedirs("storage/audio", exist_ok=True)
-        
-        active_scenes = []
-        for idx, scene in enumerate(scenes):
-            is_included = scene.get("included", True)
-            is_deleted = scene.get("deleted", False)
-            if is_included and not is_deleted:
-                active_scenes.append(scene)
-            else:
-                logger.info("skipped_scene", scene_index=scene.get("scene_index", idx), reason="Deleted" if is_deleted else "Excluded by User")
+        active_scenes = [
+            s for s in scenes
+            if s.get("included", True) and not s.get("deleted", False)
+        ]
 
         for scene in active_scenes:
             idx = scene.get("scene_index", scenes.index(scene))
-            text = scene.get("voice_text", "")
-            if not text.strip():
+            text = scene.get("voice_text", "").strip()
+            if not text:
                 continue
-            
-            # 1. Generate Voice
-            audio_asset_id = None
-            if use_custom_voice:
-                try:
-                    logger.info("generating_voice", scene=idx, voice_id=voice_id)
-                    audio_bytes, metadata = await voice_provider.generate_voice(text, voice_id=voice_id)
-                    path = f"storage/audio/{state['project_id']}_scene_{idx}.mp3"
-                    with open(path, "wb") as f:
-                        f.write(audio_bytes)
-                    audio_paths[str(idx)] = path
-                    
-                    filename = os.path.basename(path)
-                    audio_asset_id = await avatar_provider.upload_audio_asset(audio_bytes, filename)
-                except Exception as e:
-                    logger.warning("voice_generation_failed", scene=idx, error=str(e))
-            
-            # 2. Generate Dynamic Background
+
+            # Optional: AI-generated background image
             background = {"type": "color", "value": "#00FF00"}
             visual_prompt = scene.get("visual_prompt")
-            
             if visual_prompt and image_provider and hasattr(image_provider, "generate_image"):
                 try:
-                    logger.info("generating_background", scene=idx, provider=default_provider_name)
-                    size = "1024x1024" if aspect_ratio == "1:1" else ("1920x1080" if aspect_ratio == "16:9" else "1080x1920")
-                    img_bytes = await image_provider.generate_image(
-                        prompt=visual_prompt,
-                        size=size
-                    )
+                    size = "1024x1024" if aspect_ratio == "1:1" else "1920x1080"
+                    img_bytes = await image_provider.generate_image(prompt=visual_prompt, size=size)
                     bg_asset_id = await avatar_provider.upload_asset(img_bytes, "image/png")
                     background = {"type": "image", "asset_id": bg_asset_id}
                 except Exception as e:
-                    logger.warning("background_generation_failed", error=str(e))
+                    logger.warning("background_generation_failed", scene=idx, error=str(e))
 
-            # 3. Generate Avatar Video
-            logger.info("generating_avatar_video", scene=idx, avatar_id=avatar_id)
+            # HeyGen handles TTS internally — pass voice_text + voice_id
+            logger.info("generating_avatar_video", scene=idx, avatar_id=avatar_id, voice_id=voice_id)
             result = await avatar_provider.create_avatar_video(
-                script=text if not audio_asset_id else None,
+                script=text,
                 avatar_id=avatar_id,
-                voice_id=voice_id if not audio_asset_id else None,
-                audio_asset_id=audio_asset_id,
+                voice_id=voice_id or None,
                 dimension=dimension,
                 test_mode=test_mode,
-                background=background
+                background=background,
             )
-            
-            video_ids[str(idx)] = result["video_id"]
-            
+
+            video_ids[str(idx)] = {"video_id": result["video_id"], "status": "processing"}
+            logger.info("video_queued", scene=idx, video_id=result["video_id"])
+
         return {
-            "voice_audio_paths": audio_paths,
+            "voice_audio_paths": {},
             "avatar_video_ids": video_ids,
-            "active_scenes": active_scenes,
             "current_node": "generate_assets",
             "error_message": None,
         }

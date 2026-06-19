@@ -95,6 +95,15 @@ class ScriptGenerateRequest(BaseModel):
     """Request to generate script from approved content."""
 
     additional_context: str = Field("", max_length=2000)
+    selected_variation_index: int = Field(0, ge=0)
+
+
+class ScriptSectionRegenerateRequest(BaseModel):
+    """Request to regenerate a single script section."""
+
+    section_index: int
+    current_section: ScriptSection
+    additional_context: str = Field("", max_length=2000)
 
 
 # ── Regenerate ──────────────────────────────────────────────
@@ -105,6 +114,7 @@ class RegenerateRequest(BaseModel):
 
     stage: str = Field(..., pattern="^(content|script)$")
     additional_context: str = Field("", max_length=2000)
+    selected_variation_index: int = Field(0, ge=0)
 
 
 # ── Pipeline Status ─────────────────────────────────────────

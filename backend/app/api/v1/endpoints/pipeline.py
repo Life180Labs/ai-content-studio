@@ -20,6 +20,8 @@ from app.schemas.pipeline import (
     RegenerateRequest,
     ScriptGenerateRequest,
     ScriptResult,
+    ScriptSection,
+    ScriptSectionRegenerateRequest,
     StoryboardGenerateRequest,
     StoryboardResult,
     StoryboardSaveRequest,
@@ -103,6 +105,7 @@ async def generate_script(
             workspace_id=wid,
             project_id=pid,
             additional_context=data.additional_context,
+            selected_variation_index=data.selected_variation_index,
         )
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -136,11 +139,37 @@ async def regenerate_stage(
 
         elif data.stage == "script":
             return await service.generate_script(
-                user_id, wid, pid, data.additional_context
+                user_id, wid, pid, data.additional_context,
+                selected_variation_index=data.selected_variation_index,
             )
 
         raise HTTPException(status_code=400, detail=f"Unknown stage: {data.stage}")
 
+    except AIProviderError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/script/regenerate-section", response_model=ScriptSection)
+async def regenerate_script_section(
+    workspace_id: str,
+    project_id: str,
+    data: ScriptSectionRegenerateRequest,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Regenerate a single script section with AI guidance."""
+    pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
+    try:
+        service = PipelineService(session)
+        return await service.regenerate_script_section(
+            user_id=user_id,
+            workspace_id=wid,
+            project_id=pid,
+            section_index=data.section_index,
+            current_section=data.current_section,
+            additional_context=data.additional_context,
+        )
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

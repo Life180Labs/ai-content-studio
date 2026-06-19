@@ -55,3 +55,10 @@ class DigitalHumanResponse(BaseModel):
 class PreviewRequest(BaseModel):
     voice_clone_id: str
     avatar_clone_id: str
+
+class VideoStatusResponse(BaseModel):
+    video_id: str
+    status: str  # processing, completed, failed
+    video_url: Optional[str] = None
+    gif_url: Optional[str] = None
+    error: Optional[str] = None

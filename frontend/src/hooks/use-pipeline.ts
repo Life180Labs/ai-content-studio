@@ -78,6 +78,7 @@ export interface PipelineRun {
   cost_usd: number;
   latency_ms: number;
   status: string;
+  error_message?: string | null;
   created_at: string;
 }
 
@@ -144,7 +145,7 @@ export function useGenerateContent(workspaceId: string | null, projectId: string
 
 export function useGenerateScript(workspaceId: string | null, projectId: string) {
   const queryClient = useQueryClient();
-  return useMutation<ScriptResult, unknown, { additional_context?: string }>({
+  return useMutation<ScriptResult, unknown, { additional_context?: string; selected_variation_index?: number }>({
     mutationFn: (data) =>
       api.post(`${pipelineUrl(workspaceId, projectId)}/script`, data),
     onSuccess: () => {
@@ -158,13 +159,24 @@ export function useRegenerate(workspaceId: string | null, projectId: string) {
   return useMutation<
     ContentResult | ScriptResult,
     unknown,
-    { stage: string; additional_context?: string }
+    { stage: string; additional_context?: string; selected_variation_index?: number }
   >({
     mutationFn: (data) =>
       api.post(`${pipelineUrl(workspaceId, projectId)}/regenerate`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pipeline", projectId] });
     },
+  });
+}
+
+export function useRegenerateScriptSection(workspaceId: string | null, projectId: string) {
+  return useMutation<
+    ScriptSection,
+    unknown,
+    { section_index: number; current_section: ScriptSection; additional_context: string }
+  >({
+    mutationFn: (data) =>
+      api.post(`${pipelineUrl(workspaceId, projectId)}/script/regenerate-section`, data),
   });
 }
 

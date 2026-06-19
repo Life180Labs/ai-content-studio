@@ -336,6 +336,7 @@ Return ONLY a number between 0 and 100, nothing else."""
         workspace_id: uuid.UUID,
         project_id: uuid.UUID,
         additional_context: str = "",
+        selected_variation_index: int = 0,
     ) -> ScriptResult:
         """Generate a video script from the approved content."""
         project = await self._get_project(project_id, workspace_id)
@@ -350,7 +351,7 @@ Return ONLY a number between 0 and 100, nothing else."""
                 PipelineRun.status == "success",
             )
             .order_by(PipelineRun.created_at.desc())
-            .limit(2)
+            .limit(4)
         )
         result = await self.session.execute(stmt)
         content_runs = result.scalars().all()
@@ -359,8 +360,14 @@ Return ONLY a number between 0 and 100, nothing else."""
             from app.core.exceptions import ValidationError
             raise ValidationError("No content generated yet. Complete the Content stage first.")
 
-        # Use the first (most recent) content run
-        content_text = content_runs[0].output_data.get("content", "")
+        # Use the run whose variation_index matches the user's selection
+        content_text = ""
+        for run in content_runs:
+            if run.output_data.get("variation_index") == selected_variation_index:
+                content_text = run.output_data.get("content", "")
+                break
+        if not content_text:
+            content_text = content_runs[0].output_data.get("content", "")
 
         system_prompt = """You are an expert video scriptwriter. Convert content into a structured video script.
 
@@ -701,6 +708,58 @@ Keep the visual prompt descriptive and cinematic."""
             logger.error("regenerate_scene_error", error=str(e), content=response.content)
             raise AIProviderError("Failed to parse regenerated scene. Please try again.")
 
+    async def regenerate_script_section(
+        self,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        project_id: uuid.UUID,
+        section_index: int,
+        current_section: ScriptSection,
+        additional_context: str = "",
+    ) -> ScriptSection:
+        """Regenerate a single script section with AI."""
+        await self._get_project(project_id, workspace_id)
+        gateway = await self._get_gateway(user_id)
+
+        system_prompt = """You are an expert video scriptwriter. Rewrite a SINGLE section of a video script.
+Return the updated section as valid JSON with this exact structure:
+{
+  "text": "...",
+  "visual_notes": "..."
+}
+Return ONLY valid JSON. Keep section_type and duration_estimate unchanged."""
+
+        prompt = f"""Current script section ({current_section.section_type.upper()}):
+Text: {current_section.text}
+Visual Notes: {current_section.visual_notes}
+
+Rewrite the text based on: {additional_context or "Improve clarity and engagement."}
+
+Return ONLY valid JSON."""
+
+        response = await gateway.generate(
+            prompt,
+            system_prompt=system_prompt,
+            task="script",
+            temperature=0.7,
+            max_tokens=2048,
+        )
+
+        try:
+            text = response.content.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            data = json.loads(text)
+            return ScriptSection(
+                section_type=current_section.section_type,
+                text=data.get("text", current_section.text),
+                duration_estimate=current_section.duration_estimate,
+                visual_notes=data.get("visual_notes", current_section.visual_notes),
+            )
+        except Exception as e:
+            logger.error("regenerate_section_error", error=str(e))
+            raise AIProviderError("Failed to parse regenerated section. Please try again.")
+
     async def start_assets(
         self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, 
         voice_id: str, avatar_id: str, use_custom_voice: bool = True,
@@ -812,28 +871,29 @@ Keep the visual prompt descriptive and cinematic."""
         return VideoResult(videos=videos, project_id=str(project_id))
 
     async def get_voices(self, user_id: uuid.UUID) -> list[dict]:
-        """Get list of available voices from ElevenLabs."""
+        """Get list of available voices from HeyGen."""
         gateway = await self._get_gateway(user_id)
-        el_key = gateway.provider_keys.get("elevenlabs")
-        if not el_key:
-            raise AIProviderError("ElevenLabs API key not configured.", provider="elevenlabs", model="")
-        
-        from app.gateway.providers.elevenlabs import ElevenLabsProvider
-        provider = ElevenLabsProvider(api_key=el_key)
+        hg_key = gateway.provider_keys.get("heygen")
+        if not hg_key:
+            raise AIProviderError("HeyGen API key not configured.", provider="heygen", model="")
+
+        from app.gateway.providers.heygen import HeyGenProvider
+        provider = HeyGenProvider(api_key=hg_key)
         return await provider.get_voices()
 
     async def clone_voice(
         self, user_id: uuid.UUID, name: str, description: str, file_bytes: bytes, filename: str
     ) -> dict:
-        """Clone a voice using ElevenLabs."""
+        """Clone a voice using HeyGen (requires Enterprise account)."""
         gateway = await self._get_gateway(user_id)
-        el_key = gateway.provider_keys.get("elevenlabs")
-        if not el_key:
-            raise AIProviderError("ElevenLabs API key not configured.", provider="elevenlabs", model="")
-        
-        from app.gateway.providers.elevenlabs import ElevenLabsProvider
-        provider = ElevenLabsProvider(api_key=el_key)
-        return await provider.clone_voice(name, description, file_bytes, filename)
+        hg_key = gateway.provider_keys.get("heygen")
+        if not hg_key:
+            raise AIProviderError("HeyGen API key not configured.", provider="heygen", model="")
+
+        from app.gateway.providers.heygen import HeyGenProvider
+        provider = HeyGenProvider(api_key=hg_key)
+        result = await provider.clone_voice(name, description, file_bytes, filename)
+        return {"id": result["voice_id"], "name": name}
 
     async def merge_scene_videos(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID) -> dict:
         """Download all scene videos from HeyGen and merge them using moviepy."""

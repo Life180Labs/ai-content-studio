@@ -50,11 +50,38 @@ export function DigitalHumanWizard() {
   const [voiceCloneId, setVoiceCloneId] = useState<string | null>(null);
   const [avatarCloneId, setAvatarCloneId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
+  const [pollingPreview, setPollingPreview] = useState(false);
 
   // Mobile Session State
   const [mobileSessionId] = useState<string>(uuidv4());
   const [pollingConsent, setPollingConsent] = useState(false);
   const [pollingTraining, setPollingTraining] = useState(false);
+
+  // Poll HeyGen for preview video completion
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (pollingPreview && previewVideoId && currentWorkspace) {
+      interval = setInterval(async () => {
+        try {
+          const data: any = await api.get(
+            `/api/v1/workspaces/${currentWorkspace.id}/digital-humans/preview/${previewVideoId}/status`
+          );
+          if (data.status === "completed" && data.video_url) {
+            setPreviewUrl(data.video_url);
+            setPollingPreview(false);
+            toast.success("Preview video is ready!");
+          } else if (data.status === "failed") {
+            setPollingPreview(false);
+            toast.error("Preview video generation failed. You can still save without a preview.");
+          }
+        } catch {
+          // Keep polling — transient errors are common
+        }
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [pollingPreview, previewVideoId, currentWorkspace]);
 
   // Use a custom polling function with fetch
   useEffect(() => {
@@ -127,7 +154,7 @@ export function DigitalHumanWizard() {
       toast.success("Voice cloned successfully!");
       setCurrentStep(3);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Voice cloning failed.");
+      toast.error(err?.detail || err?.error?.message || "Voice cloning failed.");
     } finally {
       setIsProcessing(false);
     }
@@ -149,20 +176,23 @@ export function DigitalHumanWizard() {
       setAvatarCloneId(avatarRes.id);
       toast.success("Avatar cloned successfully!");
 
-      // 2. Generate Preview
-      const previewRes = await api.post(`/api/v1/workspaces/${currentWorkspace?.id}/digital-humans/preview`, {
+      // 2. Trigger preview generation (async — HeyGen renders in background)
+      const previewRes: any = await api.post(`/api/v1/workspaces/${currentWorkspace?.id}/digital-humans/preview`, {
         voice_clone_id: voiceCloneId,
         avatar_clone_id: avatarRes.id
       });
-      
-      // Assume polling happens here in a real production app. 
-      // For this workflow, HeyGen API might be fast enough for draft test mode, 
-      // but normally we'd poll `/videos/status`. 
-      // We will skip preview_url blocking to reach step 4 and let the user save.
-      
+
+      if (previewRes?.status === "skipped") {
+        toast.info("Preview skipped — HeyGen Enterprise required for voice/avatar cloning. You can still save this Digital Human.");
+      } else if (previewRes?.video_id) {
+        setPreviewVideoId(previewRes.video_id);
+        setPollingPreview(true);
+        toast.info("Preview is rendering — this may take a minute.");
+      }
+
       setCurrentStep(4);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Avatar cloning failed.");
+      toast.error(err?.detail || err?.error?.message || "Avatar cloning failed.");
     } finally {
       setIsProcessing(false);
     }
@@ -180,7 +210,7 @@ export function DigitalHumanWizard() {
       toast.success("Digital Human saved!");
       router.push("/assets/digital-humans");
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Failed to save.");
+      toast.error(err?.detail || err?.error?.message || "Failed to save.");
     } finally {
       setIsProcessing(false);
     }
@@ -295,8 +325,8 @@ export function DigitalHumanWizard() {
                   </TabsContent>
                   <TabsContent value="mobile">
                     <div className="flex flex-col items-center justify-center p-8 bg-muted/20 border border-border rounded-xl text-center">
-                      <QRCodeSVG 
-                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/mobile-record?session_id=${mobileSessionId}&workspace_id=${currentWorkspace?.id}&type=training`}
+                      <QRCodeSVG
+                        value={`${(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')}/mobile-record?session_id=${mobileSessionId}&workspace_id=${currentWorkspace?.id}&type=training`}
                         size={150}
                         bgColor={"transparent"}
                         fgColor={"currentColor"}
@@ -305,6 +335,9 @@ export function DigitalHumanWizard() {
                       <h4 className="font-semibold text-lg">Scan to Record</h4>
                       <p className="text-sm text-muted-foreground max-w-sm mb-4">
                         Scan this QR code with your phone's camera. Leave this page open—it will automatically update when you finish recording on your phone.
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        💡 Tip: If scanning doesn't work, make sure your phone and computer are on the same WiFi network, and the form is opened on your computer's IP address (not localhost).
                       </p>
                       <div className="flex items-center gap-2 text-primary text-sm font-medium animate-pulse">
                         <Loader2 className="w-4 h-4 animate-spin" /> Waiting for mobile video...
@@ -386,8 +419,8 @@ export function DigitalHumanWizard() {
                   </TabsContent>
                   <TabsContent value="mobile">
                     <div className="flex flex-col items-center justify-center p-8 bg-muted/20 border border-border rounded-xl text-center">
-                      <QRCodeSVG 
-                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/mobile-record?session_id=${mobileSessionId}&workspace_id=${currentWorkspace?.id}&type=consent&name=${encodeURIComponent(formData.name)}`}
+                      <QRCodeSVG
+                        value={`${(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')}/mobile-record?session_id=${mobileSessionId}&workspace_id=${currentWorkspace?.id}&type=consent&name=${encodeURIComponent(formData.name)}`}
                         size={150}
                         bgColor={"transparent"}
                         fgColor={"currentColor"}
@@ -396,6 +429,9 @@ export function DigitalHumanWizard() {
                       <h4 className="font-semibold text-lg">Scan to Record</h4>
                       <p className="text-sm text-muted-foreground max-w-sm mb-4">
                         Scan this QR code with your phone's camera. Leave this page open—it will automatically update when you finish recording on your phone.
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        💡 Tip: If scanning doesn't work, make sure your phone and computer are on the same WiFi network, and the form is opened on your computer's IP address (not localhost).
                       </p>
                       <div className="flex items-center gap-2 text-primary text-sm font-medium animate-pulse">
                         <Loader2 className="w-4 h-4 animate-spin" /> Waiting for mobile video...
@@ -456,32 +492,53 @@ export function DigitalHumanWizard() {
                <h3 className="text-2xl font-semibold">Digital Human Ready!</h3>
                <p className="text-muted-foreground">Review your new asset before saving it to the library.</p>
              </div>
-             
-             <Card>
-               <CardContent className="p-6 flex gap-6">
-                 <div className="w-1/3 aspect-[3/4] bg-muted rounded-md flex items-center justify-center">
-                   <User className="h-12 w-12 text-muted-foreground opacity-30" />
+
+             {/* Preview video */}
+             <div className="rounded-lg overflow-hidden border border-border mb-6 bg-muted/20 aspect-video flex items-center justify-center">
+               {previewUrl ? (
+                 <video
+                   src={previewUrl}
+                   controls
+                   className="w-full h-full object-contain"
+                   preload="metadata"
+                 />
+               ) : pollingPreview ? (
+                 <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                   <span className="text-sm">Generating preview video — checking every 5s…</span>
                  </div>
-                 <div className="w-2/3 space-y-4">
+               ) : (
+                 <div className="flex flex-col items-center gap-3 text-muted-foreground p-6 text-center">
+                   <User className="h-12 w-12 opacity-30" />
+                   <span className="text-sm font-medium">No preview available</span>
+                   <span className="text-xs max-w-xs">
+                     Voice cloning and digital twin creation require a HeyGen Enterprise plan.
+                     Your Digital Human has been created with mock IDs and can still be saved.
+                   </span>
+                 </div>
+               )}
+             </div>
+
+             <Card>
+               <CardContent className="p-6 space-y-4">
+                 <div>
+                   <h4 className="font-semibold text-xl">{formData.name}</h4>
+                   <p className="text-muted-foreground">{formData.role}</p>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4 text-sm">
                    <div>
-                     <h4 className="font-semibold text-xl">{formData.name}</h4>
-                     <p className="text-muted-foreground">{formData.role}</p>
+                     <span className="text-muted-foreground block text-xs">Voice Tone</span>
+                     <span className="font-medium">{formData.voice_tone}</span>
                    </div>
-                   <div className="grid grid-cols-2 gap-4 text-sm">
-                     <div>
-                       <span className="text-muted-foreground block text-xs">Voice Tone</span>
-                       <span className="font-medium">{formData.voice_tone}</span>
-                     </div>
-                     <div>
-                       <span className="text-muted-foreground block text-xs">Accent</span>
-                       <span className="font-medium">{formData.accent}</span>
-                     </div>
+                   <div>
+                     <span className="text-muted-foreground block text-xs">Accent</span>
+                     <span className="font-medium">{formData.accent}</span>
                    </div>
-                   <div className="pt-4 mt-4 border-t border-border">
-                     <span className="text-muted-foreground block text-xs mb-1">IDs</span>
-                     <code className="text-[10px] block text-muted-foreground">Voice: {voiceCloneId}</code>
-                     <code className="text-[10px] block text-muted-foreground">Avatar: {avatarCloneId}</code>
-                   </div>
+                 </div>
+                 <div className="pt-4 border-t border-border">
+                   <span className="text-muted-foreground block text-xs mb-1">IDs</span>
+                   <code className="text-[10px] block text-muted-foreground">Voice: {voiceCloneId}</code>
+                   <code className="text-[10px] block text-muted-foreground">Avatar: {avatarCloneId}</code>
                  </div>
                </CardContent>
              </Card>

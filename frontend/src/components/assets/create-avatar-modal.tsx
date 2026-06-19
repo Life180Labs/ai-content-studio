@@ -79,11 +79,12 @@ export function CreateAvatarModal() {
               HeyGen requires explicit consent to use your video as a Digital Twin. 
               Please click the link below to record your consent.
             </p>
-            <Button asChild className="w-full gap-2">
-              <a href={consentUrl} target="_blank" rel="noopener noreferrer">
-                <LinkIcon className="h-4 w-4" />
-                Go to HeyGen Consent Portal
-              </a>
+            <Button
+              render={<a href={consentUrl} target="_blank" rel="noopener noreferrer" />}
+              className="w-full gap-2"
+            >
+              <LinkIcon className="h-4 w-4" />
+              Go to HeyGen Consent Portal
             </Button>
             <Button variant="ghost" onClick={handleClose} className="w-full">
               Done

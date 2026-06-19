@@ -1,9 +1,20 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Film, FileText, FileJson, CheckCircle2, Package } from "lucide-react";
-import { usePollVideoStatus } from "@/hooks/use-pipeline";
+import {
+  Download,
+  Film,
+  FileText,
+  FileJson,
+  CheckCircle2,
+  Package,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 interface DeliveryTabProps {
   workspaceId: string | null;
@@ -11,41 +22,73 @@ interface DeliveryTabProps {
 }
 
 export function DeliveryTab({ workspaceId, projectId }: DeliveryTabProps) {
-  const { data: videoStatus } = usePollVideoStatus(workspaceId, projectId, true);
-  
-  const handleDownloadPackage = () => {
-    // Navigate to the endpoint which streams the ZIP file
-    if (!workspaceId) return;
-    const url = `/api/v1/workspaces/${workspaceId}/projects/${projectId}/pipeline/package`;
-    
-    // Create an invisible anchor tag to trigger the download
-    const a = document.createElement("a");
-    a.href = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}${url}` : `http://localhost:8000${url}`;
-    
-    // In production we would need to pass authorization headers if the endpoint requires it.
-    // For now, if the API depends on cookies/session, this standard link will work.
-    // If it relies on a Bearer token, we would fetch it via blob.
-    
-    // Using fetch to pass the authorization header since our API requires auth
-    fetch(a.href, {
-      headers: {
-        "Authorization": `Bearer ${localStorage.getItem("nexus_token") || ""}`
-      }
-    })
-    .then(response => {
-      if (!response.ok) throw new Error("Network response was not ok");
-      return response.blob();
-    })
-    .then(blob => {
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.setAttribute('download', `${projectId}_package.zip`);
+  const base = workspaceId
+    ? `/api/v1/workspaces/${workspaceId}/projects/${projectId}/pipeline`
+    : null;
+
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [videoError, setVideoError] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
+  // Fetch the merged final video as an authenticated blob for inline playback.
+  useEffect(() => {
+    if (!base) return;
+    let revoked = false;
+    let objectUrl: string | null = null;
+
+    setVideoLoading(true);
+    setVideoError(false);
+
+    api
+      .getBlob(`${base}/video`)
+      .then((blob) => {
+        if (revoked) return;
+        objectUrl = URL.createObjectURL(blob);
+        setVideoUrl(objectUrl);
+      })
+      .catch(() => {
+        if (revoked) return;
+        setVideoError(true);
+      })
+      .finally(() => {
+        if (!revoked) setVideoLoading(false);
+      });
+
+    return () => {
+      revoked = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [base]);
+
+  const handleDownloadMp4 = () => {
+    if (!videoUrl) return;
+    const link = document.createElement("a");
+    link.href = videoUrl;
+    link.setAttribute("download", `${projectId}_final.mp4`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleDownloadPackage = async () => {
+    if (!base) return;
+    setDownloadingZip(true);
+    try {
+      const blob = await api.getBlob(`${base}/package`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${projectId}_package.zip`);
       document.body.appendChild(link);
       link.click();
-      link.parentNode?.removeChild(link);
-    })
-    .catch(console.error);
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to download package. Make sure the video has been merged.");
+    } finally {
+      setDownloadingZip(false);
+    }
   };
 
   return (
@@ -71,17 +114,40 @@ export function DeliveryTab({ workspaceId, projectId }: DeliveryTabProps) {
               The concatenated video of all approved scenes
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-6">
-            <div className="aspect-video bg-black rounded-lg border flex items-center justify-center overflow-hidden relative group">
-              {/* Note: since the merge happens on the backend, we would normally get the merged URL. 
-                  For now we can display a placeholder or the first scene if merged URL isn't in state */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 text-white/80 z-10">
-                <Film className="h-12 w-12 mb-4 opacity-50" />
-                <p className="font-medium text-lg">Final Merged Video</p>
-                <p className="text-sm opacity-70 mt-2">Available in the complete package</p>
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5 opacity-50" />
+          <CardContent className="p-6 space-y-4">
+            <div className="aspect-video bg-black rounded-lg border flex items-center justify-center overflow-hidden relative">
+              {videoLoading ? (
+                <div className="flex flex-col items-center justify-center text-white/80">
+                  <Loader2 className="h-8 w-8 animate-spin mb-3" />
+                  <p className="text-sm">Loading final video…</p>
+                </div>
+              ) : videoUrl ? (
+                <video
+                  src={videoUrl}
+                  controls
+                  className="w-full h-full"
+                  preload="metadata"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center p-6 text-white/80">
+                  <AlertCircle className="h-10 w-10 mb-3 opacity-60" />
+                  <p className="font-medium">Final video not available yet</p>
+                  <p className="text-sm opacity-70 mt-1">
+                    Merge the approved scenes in the Video Review tab first.
+                  </p>
+                </div>
+              )}
             </div>
+
+            <Button
+              className="w-full gap-2"
+              size="lg"
+              onClick={handleDownloadMp4}
+              disabled={!videoUrl}
+            >
+              <Download className="h-5 w-5" />
+              Download Final Video (.mp4)
+            </Button>
           </CardContent>
         </Card>
 
@@ -119,14 +185,20 @@ export function DeliveryTab({ workspaceId, projectId }: DeliveryTabProps) {
                   <span>Storyboard Data (.json)</span>
                 </div>
               </div>
-              
+
               <div className="pt-6 mt-auto border-t">
-                <Button 
-                  size="lg" 
-                  className="w-full gap-2 text-md" 
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full gap-2 text-md"
                   onClick={handleDownloadPackage}
+                  disabled={downloadingZip}
                 >
-                  <Download className="h-5 w-5" />
+                  {downloadingZip ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Download className="h-5 w-5" />
+                  )}
                   Download Package (.zip)
                 </Button>
               </div>

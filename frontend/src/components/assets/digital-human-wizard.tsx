@@ -171,7 +171,6 @@ export function DigitalHumanWizard() {
 
       const avatarRes: any = await api.post(`/api/v1/workspaces/${currentWorkspace?.id}/digital-humans/avatar-clone`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
-        timeout: 120000 // Can take a bit
       });
       setAvatarCloneId(avatarRes.id);
       toast.success("Avatar cloned successfully!");
@@ -246,7 +245,7 @@ export function DigitalHumanWizard() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Voice Tone *</Label>
-                <Select onValueChange={v => setFormData({...formData, voice_tone: v})}>
+                <Select onValueChange={(v: string | null) => setFormData({...formData, voice_tone: v ?? ""})}>
                   <SelectTrigger><SelectValue placeholder="Select Tone" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Warm">Warm</SelectItem>
@@ -257,7 +256,7 @@ export function DigitalHumanWizard() {
               </div>
               <div className="space-y-2">
                 <Label>Accent *</Label>
-                <Select onValueChange={v => setFormData({...formData, accent: v})}>
+                <Select onValueChange={(v: string | null) => setFormData({...formData, accent: v ?? ""})}>
                   <SelectTrigger><SelectValue placeholder="Select Accent" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="US">United States</SelectItem>

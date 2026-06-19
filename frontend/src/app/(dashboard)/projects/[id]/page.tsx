@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use, useEffect } from "react";
+import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -82,9 +82,14 @@ export default function ProjectDetailPage({
   const currentStage = status?.current_stage ?? 0;
   const [activeTab, setActiveTab] = useState(STAGE_NAMES[currentStage] || "content-studio");
 
-  // Keep tab synced with stage
+  // Land on the right tab once when the project first loads. After that, the
+  // tab is driven by user navigation / explicit handlers — we must NOT re-sync
+  // on every status poll, or it would yank the user back whenever the backend
+  // stage lags the tab they just advanced to (e.g. after clicking Generate).
+  const didInitTabRef = useRef(false);
   useEffect(() => {
-    if (status) {
+    if (status && !didInitTabRef.current) {
+      didInitTabRef.current = true;
       setActiveTab(STAGE_NAMES[status.current_stage] || "content-studio");
     }
   }, [status?.current_stage]);
@@ -194,18 +199,19 @@ export default function ProjectDetailPage({
     }
   };
 
-  const handleGenerateAssets = async (payload: { selected_voice_id: string; selected_avatar_id: string; use_custom_voice: boolean; aspect_ratio: string; video_quality: string }) => {
+  const handleGenerateAssets = async (payload: { selected_voice_id: string; selected_avatar_id: string; use_custom_voice: boolean; video_quality: string; avatar_motion_enabled: boolean }) => {
     try {
       const storyboardResult = status?.storyboard_result;
       if (!storyboardResult) {
         throw new Error("Storyboard data missing. Please save the storyboard first.");
       }
 
-      await generateAssets.mutateAsync({ 
+      await generateAssets.mutateAsync({
         ...payload,
         storyboard_scenes: storyboardResult.scenes,
+        // Aspect ratio comes from the storyboard; render mode (production/draft)
+        // comes from the selector payload (do not overwrite it here).
         video_frame_size: storyboardResult.video_frame_size || "16:9",
-        video_quality: storyboardResult.video_quality || "1080p"
       });
       setActiveTab("video-review");
       toast.success("Asset generation started...");

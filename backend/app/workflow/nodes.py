@@ -129,6 +129,8 @@ async def generate_assets(state: PipelineGraphState) -> dict:
     scenes = state.get("storyboard_scenes", [])
     voice_id = state.get("selected_voice_id") or ""
     avatar_id = state.get("selected_avatar_id") or "Anna_public_3_20240108"
+    # Only custom / Avatar IV avatars support motion prompts (avatar_action).
+    motion_enabled = state.get("avatar_motion_enabled", False)
 
     aspect_ratio = state.get("aspect_ratio", "16:9")
     video_quality = state.get("video_quality", "production")
@@ -156,8 +158,9 @@ async def generate_assets(state: PipelineGraphState) -> dict:
             if not text:
                 continue
 
-            # Optional: AI-generated background image
-            background = {"type": "color", "value": "#00FF00"}
+            # Optional: AI-generated background image. Falls back to a neutral
+            # studio color (not a green screen) if image generation is unavailable.
+            background = {"type": "color", "value": "#1F2937"}
             visual_prompt = scene.get("visual_prompt")
             if visual_prompt and image_provider and hasattr(image_provider, "generate_image"):
                 try:
@@ -168,8 +171,14 @@ async def generate_assets(state: PipelineGraphState) -> dict:
                 except Exception as e:
                     logger.warning("background_generation_failed", scene=idx, error=str(e))
 
+            # avatar_action → HeyGen Avatar IV motion prompt (custom avatars only).
+            motion_prompt = None
+            if motion_enabled:
+                action = (scene.get("avatar_action") or "").strip()
+                motion_prompt = action or None
+
             # HeyGen handles TTS internally — pass voice_text + voice_id
-            logger.info("generating_avatar_video", scene=idx, avatar_id=avatar_id, voice_id=voice_id)
+            logger.info("generating_avatar_video", scene=idx, avatar_id=avatar_id, voice_id=voice_id, motion=bool(motion_prompt))
             result = await avatar_provider.create_avatar_video(
                 script=text,
                 avatar_id=avatar_id,
@@ -177,6 +186,7 @@ async def generate_assets(state: PipelineGraphState) -> dict:
                 dimension=dimension,
                 test_mode=test_mode,
                 background=background,
+                motion_prompt=motion_prompt,
             )
 
             video_ids[str(idx)] = {"video_id": result["video_id"], "status": "processing"}

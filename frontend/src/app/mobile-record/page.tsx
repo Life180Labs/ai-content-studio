@@ -1,13 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Loader2, Video, Square, RotateCcw, Upload } from "lucide-react";
 import { toast } from "sonner";
 
-export default function MobileRecordPage() {
+function MobileRecordContent() {
   const searchParams = useSearchParams();
 
   const sessionId = searchParams.get("session_id") || "";
@@ -193,5 +193,19 @@ export default function MobileRecordPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function MobileRecordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <MobileRecordContent />
+    </Suspense>
   );
 }

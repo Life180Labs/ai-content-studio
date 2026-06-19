@@ -264,6 +264,7 @@ async def generate_assets(
             storyboard_scenes=data.storyboard_scenes,
             video_frame_size=data.video_frame_size,
             video_quality=data.video_quality,
+            avatar_motion_enabled=data.avatar_motion_enabled,
         )
     except AIProviderError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -353,6 +354,21 @@ async def merge_scene_videos(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to merge videos: {str(e)}")
+
+@router.get("/video")
+async def get_final_video(
+    workspace_id: str,
+    project_id: str,
+    user_id=Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """Stream the merged final video (.mp4) for playback or download."""
+    pid = _parse_uuid(project_id, "project_id")
+    wid = _parse_uuid(workspace_id, "workspace_id")
+    service = PipelineService(session)
+    path = await service.get_final_video_path(user_id=user_id, workspace_id=wid, project_id=pid)
+    return FileResponse(path, media_type="video/mp4", filename=f"{project_id}_final.mp4")
+
 
 @router.get("/package")
 async def get_project_package(

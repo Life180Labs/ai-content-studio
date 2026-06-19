@@ -52,7 +52,10 @@ class PipelineGraphState(TypedDict):
     
     selected_avatar_id: str | None
     avatar_video_ids: dict[str, str]   # scene_index -> heygen video id
-    
+    # Whether the selected avatar is an Avatar IV / custom avatar that supports
+    # motion (custom_motion_prompt). Only then do we send avatar_action as motion.
+    avatar_motion_enabled: bool
+
     aspect_ratio: str
     video_quality: str
     

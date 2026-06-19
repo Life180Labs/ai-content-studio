@@ -54,8 +54,15 @@ class HeyGenProvider(AIProvider):
         dimension: dict | None = None,
         test_mode: bool = False,
         background: dict | None = None,
+        motion_prompt: str | None = None,
     ) -> dict:
-        """Create a video using HeyGen v2/video/generate API."""
+        """Create a video using HeyGen v2/video/generate API.
+
+        If ``motion_prompt`` is given (custom / Avatar IV avatars only), we first
+        attempt a request that enables the Avatar IV motion engine. If that
+        request is rejected (e.g. the avatar/plan doesn't support it), we
+        gracefully fall back to a standard request so rendering never breaks.
+        """
         import httpx
         import time
         url = "https://api.heygen.com/v2/video/generate"
@@ -63,12 +70,12 @@ class HeyGenProvider(AIProvider):
             "x-api-key": self.api_key,
             "Content-Type": "application/json"
         }
-        
+
         if not script and not audio_asset_id:
             raise AIProviderError("Either script or audio_asset_id must be provided for HeyGen avatar.", provider=self.provider_name, model="v2-avatar")
-            
+
         start_time = time.time()
-        
+
         if audio_asset_id:
             voice_payload = {
                 "type": "audio",
@@ -86,46 +93,60 @@ class HeyGenProvider(AIProvider):
             "width": 1920,
             "height": 1080
         }
-        
-        # Default background: solid green if not provided
+
+        # Default background: neutral studio color if not provided (never green screen)
         bg = background or {
             "type": "color",
-            "value": "#00FF00"
+            "value": "#1F2937"
         }
 
-        payload = {
-            "video_inputs": [
-                {
-                    "character": {
-                        "type": "avatar",
-                        "avatar_id": avatar_id,
-                        "avatar_style": "normal"
-                    },
-                    "voice": voice_payload,
-                    "background": bg
-                }
-            ],
-            "dimension": dim,
-            "test": test_mode
-        }
-        
-        try:
-            import httpx
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, json=payload, timeout=30.0)
-                response.raise_for_status()
-                data = response.json()
-                
+        def _build_payload(with_motion: bool) -> dict:
+            character: dict = {
+                "type": "avatar",
+                "avatar_id": avatar_id,
+                "avatar_style": "normal",
+            }
+            video_input: dict = {
+                "character": character,
+                "voice": voice_payload,
+                "background": bg,
+            }
+            if with_motion and motion_prompt:
+                # Avatar IV motion engine — controls gestures/expression/posture.
+                character["use_avatar_iv_model"] = True
+                video_input["custom_motion_prompt"] = motion_prompt
+                video_input["enhance_custom_motion_prompt"] = True
+            return {
+                "video_inputs": [video_input],
+                "dimension": dim,
+                "test": test_mode,
+            }
+
+        # Try the motion-enabled payload first (if requested), then plain.
+        attempts = []
+        if motion_prompt:
+            attempts.append(_build_payload(with_motion=True))
+        attempts.append(_build_payload(with_motion=False))
+
+        last_error: Exception | None = None
+        for i, payload in enumerate(attempts):
+            is_last = i == len(attempts) - 1
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, headers=headers, json=payload, timeout=30.0)
+                    response.raise_for_status()
+                    data = response.json()
+
                 if data.get("error"):
                     raise AIProviderError(
                         f"HeyGen Error: {data['error']['message']}",
                         provider=self.provider_name,
                         model="v2-avatar",
                     )
-                
+
                 video_id = data["data"]["video_id"]
                 latency = (time.time() - start_time) * 1000
-                
+
                 return {
                     "video_id": video_id,
                     "metadata": {
@@ -133,24 +154,41 @@ class HeyGenProvider(AIProvider):
                         "model": "v2-avatar",
                         "avatar_id": avatar_id,
                         "voice_id": voice_id,
+                        "motion": bool(payload["video_inputs"][0].get("custom_motion_prompt")),
                         "latency_ms": latency,
-                        "cost_usd": 0.50, # Example fixed cost
+                        "cost_usd": 0.50,  # Example fixed cost
                     }
                 }
-        except httpx.HTTPStatusError as e:
-            logger.error("heygen_http_error", status_code=e.response.status_code, response=e.response.text)
-            raise AIProviderError(
-                f"HeyGen HTTP Error {e.response.status_code}: {e.response.text}",
-                provider=self.provider_name,
-                model="v2-avatar",
-            )
-        except Exception as e:
-            logger.exception("heygen_unexpected_error")
-            raise AIProviderError(
-                f"Unexpected error calling HeyGen: {str(e)}",
-                provider=self.provider_name,
-                model="v2-avatar",
-            )
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                logger.error("heygen_http_error", status_code=e.response.status_code, response=e.response.text, motion_attempt=not is_last)
+                if not is_last:
+                    logger.warning("heygen_motion_payload_rejected_falling_back", avatar_id=avatar_id)
+                    continue
+                raise AIProviderError(
+                    f"HeyGen HTTP Error {e.response.status_code}: {e.response.text}",
+                    provider=self.provider_name,
+                    model="v2-avatar",
+                )
+            except AIProviderError:
+                raise
+            except Exception as e:
+                last_error = e
+                if not is_last:
+                    continue
+                logger.exception("heygen_unexpected_error")
+                raise AIProviderError(
+                    f"Unexpected error calling HeyGen: {str(e)}",
+                    provider=self.provider_name,
+                    model="v2-avatar",
+                )
+
+        # Unreachable, but keeps the type checker happy.
+        raise AIProviderError(
+            f"HeyGen video generation failed: {last_error}",
+            provider=self.provider_name,
+            model="v2-avatar",
+        )
 
     async def upload_audio_asset(self, audio_bytes: bytes, filename: str) -> str:
         """Upload an audio file to HeyGen and return the asset ID."""
@@ -208,54 +246,36 @@ class HeyGenProvider(AIProvider):
             )
 
     async def get_avatars(self) -> list[dict]:
-        """Fetch all available avatars (public and custom groups with all variants)."""
+        """Fetch all available avatar looks (variations)."""
         import httpx
-        url = "https://api.heygen.com/v2/avatars"
+        url = "https://api.heygen.com/v3/avatars/looks"
         headers = {"x-api-key": self.api_key, "Accept": "application/json"}
+        
+        all_looks = []
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=headers, timeout=15.0)
+                params = {"limit": 50}
+                response = await client.get(url, headers=headers, params=params, timeout=60.0)
                 response.raise_for_status()
                 data = response.json()
-
-            payload = data.get("data", {})
-            raw_avatars = payload.get("avatars", [])
-            avatar_groups = payload.get("avatar_groups", [])
+                
+                # Fetch first page of looks (up to 50 variations)
+                all_looks.extend(data.get("data", []))
 
             result: list[dict] = []
 
-            # Flat public / individual custom avatars
-            for v in raw_avatars:
-                if not v.get("avatar_id"):
+            for v in all_looks:
+                if not v.get("id"):
                     continue
                 result.append({
-                    "id": v["avatar_id"],
-                    "name": v.get("avatar_name", "Unknown"),
+                    "id": v["id"],
+                    "name": v.get("name", "Unknown"),
                     "gender": v.get("gender", ""),
                     "preview_image_url": v.get("preview_image_url"),
-                    "type": "custom" if v.get("is_custom") else "public",
-                    "group_id": None,
-                    "look_description": None,
+                    "type": "custom", # V3 looks endpoint returns available custom & studio looks
+                    "group_id": v.get("group_id"),
+                    "look_description": v.get("name"), # Name usually contains the variation name
                 })
-
-            # Avatar groups — each group is a Digital Twin / Photo avatar with multiple looks
-            for group in avatar_groups:
-                group_name = group.get("name", "Custom Avatar")
-                group_id = group.get("id")
-                for variant in group.get("avatars", []):
-                    avatar_id = variant.get("avatar_id")
-                    if not avatar_id:
-                        continue
-                    look = variant.get("look_description") or variant.get("style") or ""
-                    result.append({
-                        "id": avatar_id,
-                        "name": group_name,
-                        "gender": variant.get("gender", ""),
-                        "preview_image_url": variant.get("preview_image_url"),
-                        "type": "custom",
-                        "group_id": group_id,
-                        "look_description": look or None,
-                    })
 
             return result
         except Exception as e:

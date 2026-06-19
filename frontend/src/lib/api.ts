@@ -125,6 +125,29 @@ class ApiClient {
     return this.request<T>(path, { ...options, method: "GET" });
   }
 
+  /** Fetch a binary resource (e.g. video/zip) with auth + one-time token refresh. */
+  async getBlob(path: string): Promise<Blob> {
+    const url = `${this.baseUrl}${path}`;
+    const headers: Record<string, string> = {};
+    const accessToken = this.getAccessToken();
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+
+    let res = await fetch(url, { method: "GET", headers });
+
+    if (res.status === 401 && accessToken) {
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed) {
+        headers["Authorization"] = `Bearer ${this.getAccessToken()}`;
+        res = await fetch(url, { method: "GET", headers });
+      }
+    }
+
+    if (!res.ok) {
+      throw new Error(`Request failed with status ${res.status}`);
+    }
+    return res.blob();
+  }
+
   post<T>(path: string, body?: unknown, options?: RequestInit) {
     const isFormData = body instanceof FormData;
     const reqOptions: RequestInit = {

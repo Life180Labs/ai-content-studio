@@ -197,6 +197,9 @@ class VoiceAvatarGenerateRequest(BaseModel):
     storyboard_scenes: list[StoryboardScene]
     video_frame_size: str = "16:9"
     video_quality: str = "1080p"
+    # True when the chosen avatar is a custom/Avatar IV avatar that supports
+    # motion prompts — only then is each scene's avatar_action sent to HeyGen.
+    avatar_motion_enabled: bool = False
 
 # ── Avatar (Step 6) & Video (Step 7) ────────────────────────
 

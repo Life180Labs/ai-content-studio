@@ -761,19 +761,21 @@ Return ONLY valid JSON."""
             raise AIProviderError("Failed to parse regenerated section. Please try again.")
 
     async def start_assets(
-        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID, 
+        self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID,
         voice_id: str, avatar_id: str, use_custom_voice: bool = True,
         storyboard_scenes: list[StoryboardScene] | None = None,
         video_frame_size: str = "16:9",
-        video_quality: str = "1080p"
+        video_quality: str = "1080p",
+        avatar_motion_enabled: bool = False,
     ) -> dict:
         """Trigger Celery task to run LangGraph for voice and avatar generation."""
         from app.workflow.tasks import start_assets_generation
         project = await self._get_project(project_id, workspace_id)
-        # Skip stage 4 ("voice") and go straight to stage 5 ("video") or map it to a new combined stage
-        # The user's new tab mapping treats Video Review as stage 6, so Voice & Avatar can just be stage 4/5. 
-        # We'll set it to STAGE_MAP["avatar"] since it encompasses both.
-        project.current_stage = STAGE_MAP["avatar"]
+        # Once asset generation starts, the user belongs on the Video Review tab.
+        # Advance to "video" (6) so that tab is unlocked and a page reload lands
+        # there (STAGE_NAMES[6] == "video-review"), instead of bouncing back to
+        # Voice & Avatar (stage 5).
+        project.current_stage = STAGE_MAP["video"]
         
         # Save the confirmed storyboard edits to the run history
         if storyboard_scenes:
@@ -793,7 +795,11 @@ Return ONLY valid JSON."""
         await self.session.flush()
         
         scenes_dicts = [s.model_dump() for s in storyboard_scenes] if storyboard_scenes else None
-        video_settings = {"frame_size": video_frame_size, "quality": video_quality}
+        video_settings = {
+            "frame_size": video_frame_size,
+            "quality": video_quality,
+            "motion_enabled": avatar_motion_enabled,
+        }
 
         task = start_assets_generation.delay(
             str(project_id), str(user_id), voice_id, avatar_id, 
@@ -946,6 +952,17 @@ Return ONLY valid JSON."""
         project.current_stage = STAGE_MAP["delivery"]
         await self.session.commit()
         return {"status": "success", "file_path": final_path}
+
+    async def get_final_video_path(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID) -> str:
+        """Return the path to the merged final video, ensuring project isolation."""
+        import os
+
+        await self._get_project(project_id, workspace_id)
+        final_path = f"storage/video/{project_id}_final.mp4"
+        if not os.path.exists(final_path):
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Final video not generated yet. Merge the approved scenes first.")
+        return final_path
 
     async def generate_project_package(self, user_id: uuid.UUID, workspace_id: uuid.UUID, project_id: uuid.UUID) -> str:
         """Generate a ZIP file containing the script, storyboard, audio, and final video."""

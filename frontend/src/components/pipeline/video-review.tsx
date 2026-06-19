@@ -49,12 +49,22 @@ export function VideoReview({
   }
 
   const videos = videoStatus?.videos || {};
-  const totalScenes = scenes.length;
-  const completedScenesCount = Object.values(videos).filter((v: any) => v.status === "completed").length;
-  const allCompleted = completedScenesCount === totalScenes && totalScenes > 0;
-  
-  // A scene is considered fully approved if the checkbox is ticked
-  const allApproved = scenes.every((_, idx) => approvedScenes[idx]);
+
+  // Only the scenes the user kept in the storyboard are rendered by HeyGen.
+  // Excluded/deleted scenes never get a clip, so they must not be counted here.
+  const activeScenes = scenes.filter((s) => (s.included ?? true) && !s.deleted);
+
+  // Backend keys each clip by the scene's `scene_index` (not its array position).
+  const sceneVideo = (scene: StoryboardScene) => videos[String(scene.scene_index)];
+
+  const totalScenes = activeScenes.length;
+  const completedScenesCount = activeScenes.filter(
+    (s) => sceneVideo(s)?.status === "completed"
+  ).length;
+  const allCompleted = totalScenes > 0 && completedScenesCount === totalScenes;
+
+  // A scene is fully approved only once its checkbox is ticked (keyed by scene_index).
+  const allApproved = totalScenes > 0 && activeScenes.every((s) => approvedScenes[s.scene_index]);
 
   return (
     <div className="space-y-6 p-6 max-w-6xl mx-auto">
@@ -97,15 +107,17 @@ export function VideoReview({
       )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {scenes.map((scene, index) => {
-          const vStatus = videos[index.toString()];
+        {activeScenes.map((scene, i) => {
+          const sceneKey = scene.scene_index;
+          const displayNumber = i + 1;
+          const vStatus = sceneVideo(scene);
           const status = vStatus?.status || "pending";
           const isCompleted = status === "completed";
           const isFailed = status === "failed";
           const videoUrl = vStatus?.video_url;
 
           return (
-            <Card key={index} className={`overflow-hidden flex flex-col transition-all ${approvedScenes[index] ? "ring-2 ring-primary border-primary bg-primary/5" : ""}`}>
+            <Card key={scene.scene_id || sceneKey} className={`overflow-hidden flex flex-col transition-all ${approvedScenes[sceneKey] ? "ring-2 ring-primary border-primary bg-primary/5" : ""}`}>
               <div className="relative aspect-video bg-muted border-b flex items-center justify-center overflow-hidden">
                 {isCompleted && videoUrl ? (
                   <video
@@ -133,7 +145,7 @@ export function VideoReview({
                 
                 <div className="absolute top-2 left-2 flex gap-2">
                   <Badge className="bg-background/80 backdrop-blur text-foreground hover:bg-background/90 shadow-sm border-0">
-                    Scene {index + 1}
+                    Scene {displayNumber}
                   </Badge>
                   {isCompleted && (
                     <Badge className="bg-success/90 hover:bg-success text-success-foreground border-0 shadow-sm">
@@ -153,25 +165,25 @@ export function VideoReview({
                 <div className="flex items-center justify-between pt-4 border-t border-border/50">
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id={`approve-${index}`}
-                      checked={approvedScenes[index] || false}
-                      onCheckedChange={() => toggleApproval(index)}
+                      id={`approve-${sceneKey}`}
+                      checked={approvedScenes[sceneKey] || false}
+                      onCheckedChange={() => toggleApproval(sceneKey)}
                       disabled={!isCompleted}
                     />
                     <label
-                      htmlFor={`approve-${index}`}
+                      htmlFor={`approve-${sceneKey}`}
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                     >
                       Approve Scene
                     </label>
                   </div>
-                  
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     className="h-8 w-8"
                     title="Regenerate this scene"
-                    onClick={() => onRegenerateScene(index)}
+                    onClick={() => onRegenerateScene(sceneKey)}
                   >
                     <RefreshCcw className="h-4 w-4" />
                   </Button>

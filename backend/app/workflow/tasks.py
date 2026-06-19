@@ -69,7 +69,10 @@ async def _run_graph_async(
             voice_audio_paths=kwargs.get("voice_audio_paths", {}),
             selected_avatar_id=kwargs.get("selected_avatar_id"),
             avatar_video_ids=kwargs.get("avatar_video_ids", {}),
+            avatar_motion_enabled=kwargs.get("avatar_motion_enabled", False),
             use_custom_voice=kwargs.get("use_custom_voice", True),
+            aspect_ratio=kwargs.get("aspect_ratio", "16:9"),
+            video_quality=kwargs.get("video_quality", "production"),
             current_node=node,
             error_message=None,
             retry_attempts={},
@@ -202,6 +205,7 @@ def start_assets_generation(
     if video_settings is not None:
         kwargs["aspect_ratio"] = video_settings.get("frame_size", "16:9")
         kwargs["video_quality"] = video_settings.get("quality", "1080p")
+        kwargs["avatar_motion_enabled"] = video_settings.get("motion_enabled", False)
 
     return asyncio.run(_run_graph_async(
         project_id, 

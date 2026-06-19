@@ -60,6 +60,12 @@ export function StoryboardEditor({
   // Polling returns new array refs with identical data — we must not let those
   // overwrite the user's local include/exclude or edit state.
   const scenesFingerprintRef = useRef<string>("");
+  // Tracks edits made by the user (not by server-sync) so the debounced
+  // auto-save only fires for real changes — never echoes polled data back.
+  const isDirtyRef = useRef(false);
+  // Holds the latest values so the unmount flush saves current data, not a stale closure.
+  const latestSaveRef = useRef({ scenes: initialScenes, videoFrameSize: initialVideoFrameSize, videoQuality: initialVideoQuality });
+  const saveStoryboardRef = useRef<((data: { scenes: StoryboardScene[]; video_frame_size: string; video_quality: string }) => void) | null>(null);
 
   useEffect(() => {
     if (initialScenes.length === 0) return;
@@ -94,6 +100,37 @@ export function StoryboardEditor({
   const saveStoryboard = useSaveStoryboard(workspaceId, projectId);
   const regenerateScene = useRegenerateScene(workspaceId, projectId);
 
+  // Keep refs current for the unmount flush below.
+  latestSaveRef.current = { scenes, videoFrameSize, videoQuality };
+  saveStoryboardRef.current = (data) => saveStoryboard.mutate(data);
+
+  // Auto-persist include/exclude toggles and edits so the generation step
+  // (which reads the saved storyboard from the DB) always uses the user's
+  // latest selections — even if they leave this tab via the nav bar.
+  useEffect(() => {
+    if (!isDirtyRef.current) return;
+    const handle = setTimeout(() => {
+      isDirtyRef.current = false;
+      saveStoryboard.mutate({
+        scenes,
+        video_frame_size: videoFrameSize,
+        video_quality: videoQuality,
+      });
+    }, 800);
+    return () => clearTimeout(handle);
+  }, [scenes, videoFrameSize, videoQuality]);
+
+  // On unmount (e.g. switching tabs before the debounce fires), flush any
+  // pending edit so it is never lost.
+  useEffect(() => {
+    return () => {
+      if (isDirtyRef.current && saveStoryboardRef.current) {
+        const { scenes: s, videoFrameSize: f, videoQuality: q } = latestSaveRef.current;
+        saveStoryboardRef.current({ scenes: s, video_frame_size: f, video_quality: q });
+      }
+    };
+  }, []);
+
   if (runError) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -126,6 +163,7 @@ export function StoryboardEditor({
   const totalCount = activeScenes.length;
 
   const updateScene = (index: number, field: keyof StoryboardScene, value: any) => {
+    isDirtyRef.current = true;
     setScenes((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
   };
 
@@ -133,12 +171,17 @@ export function StoryboardEditor({
     updateScene(index, "included", scenes[index].included === false ? true : false);
   };
 
-  const selectAll = () =>
+  const selectAll = () => {
+    isDirtyRef.current = true;
     setScenes((prev) => prev.map((s) => (s.deleted ? s : { ...s, included: true })));
-  const deselectAll = () =>
+  };
+  const deselectAll = () => {
+    isDirtyRef.current = true;
     setScenes((prev) => prev.map((s) => (s.deleted ? s : { ...s, included: false })));
+  };
 
   const addScene = () => {
+    isDirtyRef.current = true;
     const maxIdx = scenes.length > 0 ? Math.max(...scenes.map((s) => s.scene_index)) + 1 : 1;
     setScenes((prev) => [
       ...prev,
@@ -168,6 +211,7 @@ export function StoryboardEditor({
         additional_context: context,
         current_scene: scenes[index],
       });
+      isDirtyRef.current = true;
       setScenes((prev) => prev.map((s, i) => (i === index ? updatedScene : s)));
       toast.success(`Scene ${scenes[index].scene_index} regenerated!`);
     } catch (err: any) {
@@ -219,7 +263,7 @@ export function StoryboardEditor({
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           {/* Format & Quality */}
-          <Select value={videoFrameSize} onValueChange={(v) => v && setVideoFrameSize(v)}>
+          <Select value={videoFrameSize} onValueChange={(v) => { if (v) { isDirtyRef.current = true; setVideoFrameSize(v); } }}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Format" />
             </SelectTrigger>
@@ -229,7 +273,7 @@ export function StoryboardEditor({
               <SelectItem value="1:1">1:1 Square</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={videoQuality} onValueChange={(v) => v && setVideoQuality(v)}>
+          <Select value={videoQuality} onValueChange={(v) => { if (v) { isDirtyRef.current = true; setVideoQuality(v); } }}>
             <SelectTrigger className="w-[110px]">
               <SelectValue placeholder="Quality" />
             </SelectTrigger>

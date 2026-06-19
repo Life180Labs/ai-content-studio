@@ -215,6 +215,7 @@ export interface VoiceAvatarGeneratePayload {
   storyboard_scenes?: StoryboardScene[];
   video_frame_size?: string;
   video_quality?: string;
+  avatar_motion_enabled?: boolean;
 }
 
 export function useGenerateAssets(workspaceId: string | null, projectId: string) {

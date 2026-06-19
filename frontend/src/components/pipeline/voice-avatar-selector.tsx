@@ -40,8 +40,8 @@ interface VoiceAvatarSelectorProps {
     selected_voice_id: string;
     selected_avatar_id: string;
     use_custom_voice: boolean;
-    aspect_ratio: string;
     video_quality: string;
+    avatar_motion_enabled: boolean;
   }) => void;
   isGeneratingAssets: boolean;
 }
@@ -172,7 +172,6 @@ export function VoiceAvatarSelector({
 
   const [selectedAvatar, setSelectedAvatar] = useState<string>("");
   const [useCustomVoice, setUseCustomVoice] = useState(true);
-  const [aspectRatio, setAspectRatio] = useState("16:9");
   const [videoQuality, setVideoQuality] = useState("production");
 
   const { data: voices, isLoading: isVoicesLoading } = useGetVoices(workspaceId, projectId);
@@ -241,12 +240,14 @@ export function VoiceAvatarSelector({
       toast.error("Please select a voice first.");
       return;
     }
+    // Only custom / Avatar IV avatars support motion prompts (avatar_action).
+    const isCustomAvatar = customAvatars.some((a) => a.id === selectedAvatar);
     onProceed({
       selected_voice_id: selectedVoice,
       selected_avatar_id: selectedAvatar,
       use_custom_voice: useCustomVoice,
-      aspect_ratio: aspectRatio,
       video_quality: videoQuality,
+      avatar_motion_enabled: isCustomAvatar,
     });
   };
 
@@ -532,30 +533,19 @@ export function VoiceAvatarSelector({
                   <Switch checked={useCustomVoice} onCheckedChange={setUseCustomVoice} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Aspect Ratio</Label>
-                    <select
-                      value={aspectRatio}
-                      onChange={(e) => setAspectRatio(e.target.value)}
-                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
-                    >
-                      <option value="16:9">Landscape (16:9)</option>
-                      <option value="9:16">Portrait (9:16)</option>
-                      <option value="1:1">Square (1:1)</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Render Mode</Label>
-                    <select
-                      value={videoQuality}
-                      onChange={(e) => setVideoQuality(e.target.value)}
-                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
-                    >
-                      <option value="production">Production (HD)</option>
-                      <option value="draft">Draft (fast test)</option>
-                    </select>
-                  </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Render Mode</Label>
+                  <select
+                    value={videoQuality}
+                    onChange={(e) => setVideoQuality(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                  >
+                    <option value="production">Production (HD)</option>
+                    <option value="draft">Draft (fast test)</option>
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Aspect ratio is set in the Storyboard step. Draft renders are faster and watermarked for testing.
+                  </p>
                 </div>
               </div>
             </CardContent>
